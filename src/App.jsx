@@ -87,9 +87,9 @@ function Nav({ candidateCount, dbStatus, onOpenSettings }) {
   return (
     <nav style={{
       position: 'sticky', top: 0, zIndex: 100,
-      backgroundColor: 'rgba(255,255,255,0.95)',
+      backgroundColor: 'rgba(16, 23, 36, 0.95)',
       backdropFilter: 'blur(12px)',
-      borderBottom: '1px solid #e4e4e7',
+      borderBottom: '1px solid var(--border-color)',
       padding: '0 32px',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       height: '56px',
@@ -97,11 +97,11 @@ function Nav({ candidateCount, dbStatus, onOpenSettings }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{
-            width: '28px', height: '28px', backgroundColor: '#18181b',
+            width: '28px', height: '28px', backgroundColor: 'var(--accent)',
             borderRadius: '5px', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', color: 'white', fontWeight: '800', fontSize: '13px',
+            justifyContent: 'center', color: '#060b13', fontWeight: '800', fontSize: '13px',
           }}>SP</div>
-          <span style={{ fontWeight: '700', fontSize: '15px', color: '#18181b', letterSpacing: '-0.02em' }}>
+          <span style={{ fontWeight: '700', fontSize: '15px', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
             Silicon Patterns
           </span>
         </div>
@@ -109,10 +109,12 @@ function Nav({ candidateCount, dbStatus, onOpenSettings }) {
         {/* DB Connection Badge */}
         <span style={{
           fontSize: '10px', fontWeight: '600',
-          backgroundColor: badge.bg, color: badge.color, border: `1px solid ${badge.border}`,
+          backgroundColor: dbStatus === 'connected' ? 'rgba(22, 163, 74, 0.15)' : dbStatus === 'connecting' ? 'rgba(217, 119, 6, 0.15)' : 'rgba(220, 38, 38, 0.15)', 
+          color: dbStatus === 'connected' ? '#4ade80' : dbStatus === 'connecting' ? '#fbbf24' : '#f87171', 
+          border: `1px solid ${dbStatus === 'connected' ? 'rgba(74, 222, 128, 0.3)' : dbStatus === 'connecting' ? 'rgba(251, 191, 36, 0.3)' : 'rgba(248, 113, 113, 0.3)'}`,
           padding: '2px 8px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '4px'
         }}>
-          <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: dbStatus === 'connected' ? '#16a34a' : dbStatus === 'connecting' ? '#d97706' : dbStatus === 'error' ? '#dc2626' : '#9ca3af' }} />
+          <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: dbStatus === 'connected' ? '#4ade80' : dbStatus === 'connecting' ? '#fbbf24' : dbStatus === 'error' ? '#f87171' : '#9ca3af' }} />
           {badge.label}
         </span>
       </div>
@@ -128,8 +130,8 @@ function Nav({ candidateCount, dbStatus, onOpenSettings }) {
             <button key={path} onClick={() => navigate(path)} style={{
               padding: '6px 14px', borderRadius: '6px', fontSize: '13px',
               fontWeight: active ? '600' : '500', border: 'none', cursor: 'pointer',
-              backgroundColor: active ? '#18181b' : 'transparent',
-              color: active ? '#ffffff' : '#52525b',
+              backgroundColor: active ? 'rgba(0, 229, 255, 0.1)' : 'transparent',
+              color: active ? 'var(--accent)' : 'var(--text-secondary)',
               transition: 'all 0.15s ease',
             }}>
               {label}
@@ -141,11 +143,11 @@ function Nav({ candidateCount, dbStatus, onOpenSettings }) {
         <button 
           onClick={onOpenSettings}
           style={{
-            background: 'none', border: '1px solid #e4e4e7', cursor: 'pointer',
+            background: 'none', border: '1px solid var(--border-color)', cursor: 'pointer',
             padding: '6px 10px', borderRadius: '6px', fontSize: '14px', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', color: '#52525b', transition: 'all 0.15s'
+            alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', transition: 'all 0.15s'
           }}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f4f4f5'}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
           title="Workspace Settings"
         >
@@ -296,25 +298,25 @@ function SearchPage({ masterLeads, setMasterLeads }) {
 
   const inputStyle = {
     width: '100%', padding: '10px 12px', boxSizing: 'border-box',
-    borderRadius: '6px', border: '1px solid #d4d4d8',
-    fontSize: '14px', color: '#18181b', outline: 'none', fontFamily: 'inherit',
-    backgroundColor: '#ffffff',
+    borderRadius: '6px', border: '1px solid var(--border-color)',
+    fontSize: '14px', color: 'var(--text-primary)', outline: 'none', fontFamily: 'inherit',
+    backgroundColor: 'var(--bg-main)',
   };
   const labelStyle = {
     display: 'block', fontSize: '11px', fontWeight: '600',
-    color: '#52525b', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em',
+    color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em',
   };
 
   return (
     <div style={{ padding: '32px 20px', maxWidth: '760px', margin: '0 auto' }}>
-      <div style={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '36px' }}>
-        <div style={{ marginBottom: '32px', paddingBottom: '24px', borderBottom: '1px solid #e4e4e7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.5)', padding: '36px' }}>
+        <div style={{ marginBottom: '32px', paddingBottom: '24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h2 style={{ margin: '0 0 4px 0', fontSize: '20px', fontWeight: '700', color: '#18181b', letterSpacing: '-0.02em' }}>Targeted Search</h2>
-            <p style={{ margin: 0, fontSize: '13px', color: '#71717a' }}>Configure parameters and launch a LinkedIn scrape</p>
+            <h2 style={{ margin: '0 0 4px 0', fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Targeted Search</h2>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>Configure parameters and launch a LinkedIn scrape</p>
           </div>
           {masterLeads.length > 0 && (
-            <button onClick={() => navigate('/candidates')} style={{ padding: '8px 16px', backgroundColor: '#f4f4f5', color: '#18181b', border: '1px solid #e4e4e7', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+            <button onClick={() => navigate('/candidates')} style={{ padding: '8px 16px', backgroundColor: 'var(--bg-main)', color: 'var(--accent)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
               View {masterLeads.length} Candidates →
             </button>
           )}
@@ -345,7 +347,7 @@ function SearchPage({ masterLeads, setMasterLeads }) {
                   style={inputStyle}
                 />
                 <button type="button" onClick={handleAddCustomSkill} style={{
-                  padding: '0 16px', backgroundColor: '#18181b', color: '#fff', border: 'none',
+                  padding: '0 16px', backgroundColor: 'var(--bg-main)', color: 'var(--accent)', border: '1px solid var(--accent)',
                   borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer'
                 }}>Add</button>
               </div>
@@ -353,13 +355,13 @@ function SearchPage({ masterLeads, setMasterLeads }) {
 
             <div style={{
               display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '200px', overflowY: 'auto',
-              padding: '12px', backgroundColor: '#fafafa', border: '1px solid #e4e4e7', borderRadius: '6px'
+              padding: '12px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px'
             }}>
               {selectedSkills.map(skill => (
                 <button key={skill} type="button" onClick={() => toggleSkill(skill)} style={{
                   padding: '7px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: '500',
                   cursor: 'pointer', transition: 'all 0.15s ease',
-                  border: '1px solid #18181b', backgroundColor: '#18181b', color: '#ffffff',
+                  border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: '#000000',
                 }}>{skill} ✕</button>
               ))}
 
@@ -367,7 +369,7 @@ function SearchPage({ masterLeads, setMasterLeads }) {
                 <button key={skill} type="button" onClick={() => toggleSkill(skill)} style={{
                   padding: '7px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: '500',
                   cursor: 'pointer', transition: 'all 0.15s ease',
-                  border: '1px solid #e4e4e7', backgroundColor: '#ffffff', color: '#3f3f46',
+                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
                 }}>{skill}</button>
               ))}
             </div>
@@ -375,12 +377,12 @@ function SearchPage({ masterLeads, setMasterLeads }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div>
-              <label style={labelStyle}>Designation(s) <span style={{ textTransform: 'none', fontWeight: '400', color: '#a1a1aa' }}>(comma-separated)</span></label>
+              <label style={labelStyle}>Designation(s) <span style={{ textTransform: 'none', fontWeight: '400', color: 'var(--text-secondary)' }}>(comma-separated)</span></label>
               <input type="text" value={designation} onChange={e => setDesignation(e.target.value)} placeholder="e.g. Verification Engineer, ASIC Engineer" style={inputStyle} />
             </div>
             <div>
               <label style={labelStyle}>Experience Bracket</label>
-              <select value={experience} onChange={e => setExperience(e.target.value)} style={{ ...inputStyle, backgroundColor: '#fff' }}>
+              <select value={experience} onChange={e => setExperience(e.target.value)} style={{ ...inputStyle }}>
                 <option value="any">Any Experience</option>
                 <option value="2">Junior (1-2 years)</option>
                 <option value="3">Mid-Level (3-5 years)</option>
@@ -401,31 +403,32 @@ function SearchPage({ masterLeads, setMasterLeads }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: '#fafafa', borderRadius: '6px', border: '1px solid #e4e4e7' }}>
-            <input type="checkbox" id="openToWork" checked={openToWork} onChange={e => setOpenToWork(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: '#18181b', cursor: 'pointer' }} />
-            <label htmlFor="openToWork" style={{ fontSize: '13px', fontWeight: '500', color: '#3f3f46', cursor: 'pointer', userSelect: 'none' }}>Enforce "Open to Work" profile requirements</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: 'var(--bg-main)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+            <input type="checkbox" id="openToWork" checked={openToWork} onChange={e => setOpenToWork(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
+            <label htmlFor="openToWork" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>Enforce "Open to Work" profile requirements</label>
           </div>
 
           <button type="submit" disabled={loading} style={{
-            padding: '13px', backgroundColor: loading ? '#a1a1aa' : '#18181b',
-            color: 'white', border: 'none', borderRadius: '6px',
-            fontSize: '14px', fontWeight: '600',
-            cursor: loading ? 'not-allowed' : 'pointer', transition: 'background-color 0.2s',
+            padding: '13px', backgroundColor: loading ? 'var(--border-color)' : 'var(--accent)',
+            color: loading ? 'var(--text-secondary)' : '#000000', border: 'none', borderRadius: '6px',
+            fontSize: '14px', fontWeight: '700',
+            cursor: loading ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
+            boxShadow: loading ? 'none' : '0 0 15px rgba(0, 229, 255, 0.4)'
           }}>
             {loading ? 'Executing Data Scrape...' : 'Run Targeted Search'}
           </button>
         </form>
 
         {status && (
-          <div style={{ marginTop: '20px', padding: '14px 16px', backgroundColor: '#f4f4f5', borderRadius: '6px', fontSize: '13px', color: '#3f3f46', fontWeight: '500' }}>
+          <div style={{ marginTop: '20px', padding: '14px 16px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '13px', color: 'var(--text-primary)', fontWeight: '500' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ display: 'inline-block', width: '8px', height: '8px', flexShrink: 0, backgroundColor: loading ? '#eab308' : '#10b981', borderRadius: '50%' }} />
+              <span style={{ display: 'inline-block', width: '8px', height: '8px', flexShrink: 0, backgroundColor: loading ? '#eab308' : '#10b981', borderRadius: '50%', boxShadow: loading ? '0 0 8px #eab308' : '0 0 8px #10b981' }} />
               <span>{status}</span>
             </div>
             {apifyRunUrl && (
-              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #e4e4e7', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '12px', color: '#71717a' }}>🔴 Live Run:</span>
-                <a href={apifyRunUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#2563eb', fontWeight: '600', textDecoration: 'underline' }}>
+              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>🔴 Live Run:</span>
+                <a href={apifyRunUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: '600', textDecoration: 'none' }}>
                   Watch on Apify Console →
                 </a>
               </div>
@@ -434,32 +437,32 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         )}
 
         {latestRunResults.length > 0 && (
-          <div style={{ marginTop: '32px', paddingTop: '28px', borderTop: '1px solid #e4e4e7' }}>
+          <div style={{ marginTop: '32px', paddingTop: '28px', borderTop: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#18181b' }}>{latestRunResults.length} New Candidates Added</h3>
-              <button onClick={() => navigate('/candidates')} style={{ padding: '6px 14px', backgroundColor: '#18181b', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>{latestRunResults.length} New Candidates Added</h3>
+              <button onClick={() => navigate('/candidates')} style={{ padding: '6px 14px', backgroundColor: 'var(--bg-main)', color: 'var(--accent)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
                 View All in Database →
               </button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {latestRunResults.slice(0, 5).map((p, idx) => (
-                <div key={idx} style={{ padding: '12px 16px', backgroundColor: '#fafafa', border: '1px solid #e4e4e7', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={idx} style={{ padding: '12px 16px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#18181b' }}>{safeExtractText(p.firstName)} {safeExtractText(p.lastName)}</span>
-                    <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#71717a' }}>{safeExtractText(p.currentTitle || p.jobTitle || p.headline).substring(0, 60)}</p>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{safeExtractText(p.firstName)} {safeExtractText(p.lastName)}</span>
+                    <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>{safeExtractText(p.currentTitle || p.jobTitle || p.headline).substring(0, 60)}</p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <span style={{
-                      backgroundColor: p.matchScore >= 70 ? '#dcfce7' : p.matchScore >= 40 ? '#fef9c3' : '#f4f4f5',
-                      color: p.matchScore >= 70 ? '#16a34a' : p.matchScore >= 40 ? '#ca8a04' : '#52525b',
-                      padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '700',
+                      backgroundColor: p.matchScore >= 70 ? 'rgba(22, 163, 74, 0.15)' : p.matchScore >= 40 ? 'rgba(217, 119, 6, 0.15)' : 'var(--bg-main)',
+                      color: p.matchScore >= 70 ? '#4ade80' : p.matchScore >= 40 ? '#fbbf24' : 'var(--text-secondary)',
+                      padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '700', border: `1px solid ${p.matchScore >= 70 ? 'rgba(74, 222, 128, 0.3)' : p.matchScore >= 40 ? 'rgba(251, 191, 36, 0.3)' : 'var(--border-color)'}`
                     }}>{p.matchScore}</span>
-                    <a href={safeExtractText(p.linkedinUrl || p.url)} target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}>↗</a>
+                    <a href={safeExtractText(p.linkedinUrl || p.url)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}>↗</a>
                   </div>
                 </div>
               ))}
               {latestRunResults.length > 5 && (
-                <p style={{ textAlign: 'center', fontSize: '12px', color: '#a1a1aa', margin: '4px 0 0' }}>+{latestRunResults.length - 5} more in the Candidates page</p>
+                <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>+{latestRunResults.length - 5} more in the Candidates page</p>
               )}
             </div>
           </div>
@@ -661,7 +664,7 @@ export default function App() {
 alter table candidates disable row level security;`;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f4f4f5', fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#18181b' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-main)', fontFamily: 'var(--sans)', color: 'var(--text-primary)' }}>
       <Nav candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} />
       
       <Routes>
@@ -680,18 +683,18 @@ alter table candidates disable row level security;`;
           backdropFilter: 'blur(4px)'
         }}>
           <div style={{
-            backgroundColor: '#fff', borderRadius: '12px', maxWidth: '560px', width: '100%',
-            maxHeight: '90vh', overflowY: 'auto', padding: '28px', border: '1px solid #e4e4e7',
-            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
+            backgroundColor: 'var(--bg-surface)', borderRadius: '12px', maxWidth: '560px', width: '100%',
+            maxHeight: '90vh', overflowY: 'auto', padding: '28px', border: '1px solid var(--border-color)',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)'
           }}>
             {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e4e4e7', paddingBottom: '14px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#18181b' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
                 ⚙️ Workspace Settings
               </h3>
               <button 
                 onClick={() => setShowSettings(false)}
-                style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#a1a1aa' }}
+                style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)' }}
               >×</button>
             </div>
 
@@ -706,19 +709,19 @@ alter table candidates disable row level security;`;
                     onChange={e => setInputUseSupabase(e.target.checked)}
                     style={{ width: '16px', height: '16px', accentColor: '#18181b', cursor: 'pointer' }}
                   />
-                  <label htmlFor="enableDb" style={{ fontSize: '13px', fontWeight: '600', color: '#18181b', cursor: 'pointer', userSelect: 'none' }}>
+                  <label htmlFor="enableDb" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                     Connect Shared Supabase Database (No Login Required)
                   </label>
                 </div>
-                <p style={{ margin: 0, fontSize: '12px', color: '#71717a', lineHeight: '1.4' }}>
+                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
                   Enabling this connects your recruiter database to a shared online cloud database. Multiple recruiters can share and updates will automatically sync across devices.
                 </p>
               </div>
 
               {inputUseSupabase && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', backgroundColor: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
                       Supabase Project URL
                     </label>
                     <input
@@ -729,13 +732,14 @@ alter table candidates disable row level security;`;
                       required={inputUseSupabase}
                       style={{
                         width: '100%', padding: '8px 12px', boxSizing: 'border-box',
-                        borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px'
+                        borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '13px',
+                        backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)'
                       }}
                     />
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
                       Supabase Public Anon API Key
                     </label>
                     <input
@@ -746,7 +750,8 @@ alter table candidates disable row level security;`;
                       required={inputUseSupabase}
                       style={{
                         width: '100%', padding: '8px 12px', boxSizing: 'border-box',
-                        borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px'
+                        borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '13px',
+                        backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)'
                       }}
                     />
                   </div>
@@ -757,7 +762,7 @@ alter table candidates disable row level security;`;
                       type="button"
                       onClick={() => setShowSqlHelp(!showSqlHelp)}
                       style={{
-                        background: 'none', border: 'none', padding: 0, color: '#2563eb',
+                        background: 'none', border: 'none', padding: 0, color: 'var(--accent)',
                         fontSize: '11px', fontWeight: '600', cursor: 'pointer', textDecoration: 'underline'
                       }}
                     >
@@ -766,11 +771,11 @@ alter table candidates disable row level security;`;
                     
                     {showSqlHelp && (
                       <div style={{ marginTop: '8px' }}>
-                        <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#475569', lineHeight: '1.4' }}>
+                        <p style={{ margin: '0 0 6px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
                           Paste this code into the <strong>SQL Editor</strong> tab inside your Supabase project dashboard to create the candidate table with disabled RLS:
                         </p>
                         <pre style={{
-                          margin: 0, padding: '10px', backgroundColor: '#1e293b', color: '#f8fafc',
+                          margin: 0, padding: '10px', backgroundColor: '#000', color: '#fff', border: '1px solid var(--border-color)',
                           borderRadius: '6px', fontSize: '10px', overflowX: 'auto', fontFamily: 'monospace',
                           lineHeight: '1.4'
                         }}>
@@ -783,13 +788,13 @@ alter table candidates disable row level security;`;
               )}
 
               {/* Action Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #e4e4e7', paddingTop: '16px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '8px' }}>
                 <button 
                   type="button"
                   onClick={() => setShowSettings(false)}
                   style={{
-                    padding: '8px 16px', backgroundColor: '#f4f4f5', color: '#18181b',
-                    border: '1px solid #e4e4e7', borderRadius: '6px', cursor: 'pointer',
+                    padding: '8px 16px', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer',
                     fontSize: '12px', fontWeight: '600'
                   }}
                 >
@@ -798,9 +803,9 @@ alter table candidates disable row level security;`;
                 <button 
                   type="submit"
                   style={{
-                    padding: '8px 16px', backgroundColor: '#18181b', color: '#fff',
+                    padding: '8px 16px', backgroundColor: 'var(--accent)', color: '#000',
                     border: 'none', borderRadius: '6px', cursor: 'pointer',
-                    fontSize: '12px', fontWeight: '600'
+                    fontSize: '12px', fontWeight: '700'
                   }}
                 >
                   Save & Sync Configuration

@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const PIPELINE_STAGES = [
-  { id: 'sourced', label: 'Sourced', color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', text: '#374151' },
-  { id: 'reached_out', label: 'Reached Out', color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af' },
-  { id: 'interviewing', label: 'Interviewing', color: '#d97706', bg: '#fef3c7', border: '#fde68a', text: '#92400e' },
-  { id: 'offer', label: 'Offer Extended', color: '#c084fc', bg: '#faf5ff', border: '#e9d5ff', text: '#6b21a8' },
-  { id: 'hired', label: 'Hired', color: '#16a34a', bg: '#dcfce7', border: '#bbf7d0', text: '#166534' },
-  { id: 'rejected', label: 'Rejected', color: '#dc2626', bg: '#fef2f2', border: '#fecaca', text: '#991b1b' }
+  { id: 'sourced', label: 'Sourced', color: 'var(--text-secondary)', bg: 'var(--bg-surface)', border: 'var(--border-color)', text: 'var(--text-secondary)' },
+  { id: 'reached_out', label: 'Reached Out', color: '#60a5fa', bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(96, 165, 250, 0.3)', text: '#60a5fa' },
+  { id: 'interviewing', label: 'Interviewing', color: '#fbbf24', bg: 'rgba(217, 119, 6, 0.15)', border: 'rgba(251, 191, 36, 0.3)', text: '#fbbf24' },
+  { id: 'offer', label: 'Offer Extended', color: '#c084fc', bg: 'rgba(168, 85, 247, 0.15)', border: 'rgba(192, 132, 252, 0.3)', text: '#c084fc' },
+  { id: 'hired', label: 'Hired', color: '#4ade80', bg: 'rgba(22, 163, 74, 0.15)', border: 'rgba(74, 222, 128, 0.3)', text: '#4ade80' },
+  { id: 'rejected', label: 'Rejected', color: '#f87171', bg: 'rgba(220, 38, 38, 0.15)', border: 'rgba(248, 113, 113, 0.3)', text: '#f87171' }
 ];
 
 export default function PipelinePage({ masterLeads, setMasterLeads }) {
@@ -51,8 +51,8 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
     return (
       <div style={{ padding: '80px 20px', textAlign: 'center' }}>
         <div style={{ fontSize: '40px', marginBottom: '16px' }}>📋</div>
-        <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: '700', color: '#18181b' }}>Empty Pipeline</h2>
-        <p style={{ margin: 0, fontSize: '14px', color: '#71717a' }}>No candidates exist in your system to track yet. Go to Search to source them!</p>
+        <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)' }}>Empty Pipeline</h2>
+        <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)' }}>No candidates exist in your system to track yet. Go to Search to source them!</p>
       </div>
     );
   }
@@ -62,10 +62,10 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
       
       {/* Page Header */}
       <div>
-        <h1 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: '700', color: '#18181b', letterSpacing: '-0.02em', textAlign: 'left' }}>
+        <h1 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.02em', textAlign: 'left' }}>
           Recruitment Pipeline Board
         </h1>
-        <p style={{ margin: 0, fontSize: '13px', color: '#71717a', textAlign: 'left' }}>
+        <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'left' }}>
           Monitor and update candidate interview progress through pipeline columns.
         </p>
       </div>
@@ -87,15 +87,15 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
             <div 
               key={stage.id} 
               style={{
-                backgroundColor: '#f8fafc',
-                border: '1px solid #e2e8f0',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-color)',
                 borderRadius: '12px',
                 padding: '12px',
                 minHeight: '500px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '10px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                boxShadow: '0 1px 3px rgba(0,0,0,0.5)'
               }}
             >
               {/* Column Header */}
@@ -107,7 +107,7 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                 borderBottom: `2.5px solid ${stage.color}`,
                 marginBottom: '4px'
               }}>
-                <span style={{ fontSize: '13px', fontWeight: '700', color: '#334155' }}>{stage.label}</span>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>{stage.label}</span>
                 <span style={{ 
                   fontSize: '11px', 
                   fontWeight: '800', 
@@ -128,10 +128,10 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                     padding: '24px 10px', 
                     textAlign: 'center', 
                     fontSize: '11px', 
-                    color: '#94a3b8',
-                    border: '1px dashed #cbd5e1',
+                    color: 'var(--text-secondary)',
+                    border: '1px dashed var(--border-color)',
                     borderRadius: '8px',
-                    backgroundColor: '#fafafa',
+                    backgroundColor: 'var(--bg-main)',
                     marginTop: '4px'
                   }}>
                     Drag/Move candidates here
@@ -142,42 +142,42 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                     const score = candidate.matchScore || 0;
 
                     // Score colors helper
-                    const scoreColor = score >= 70 ? '#16a34a' : score >= 40 ? '#ca8a04' : '#6b7280';
-                    const scoreBg = score >= 70 ? '#dcfce7' : score >= 40 ? '#fef9c3' : '#f3f4f6';
+                    const scoreColor = score >= 70 ? '#4ade80' : score >= 40 ? '#fbbf24' : 'var(--text-secondary)';
+                    const scoreBg = score >= 70 ? 'rgba(22, 163, 74, 0.15)' : score >= 40 ? 'rgba(217, 119, 6, 0.15)' : 'var(--bg-surface)';
 
                     return (
                       <div 
                         key={cardIdx}
                         style={{
-                          backgroundColor: '#ffffff',
-                          border: '1px solid #e2e8f0',
+                          backgroundColor: 'var(--bg-main)',
+                          border: '1px solid var(--border-color)',
                           borderRadius: '8px',
                           padding: '12px',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '8px',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.5)',
                           transition: 'transform 0.15s, box-shadow 0.15s',
                           cursor: 'default'
                         }}
                         onMouseEnter={e => {
                           e.currentTarget.style.transform = 'translateY(-2px)';
-                          e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.03)';
+                          e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.8), 0 2px 4px -1px rgba(0,0,0,0.5)';
                         }}
                         onMouseLeave={e => {
                           e.currentTarget.style.transform = 'none';
-                          e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+                          e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.5)';
                         }}
                       >
                         {/* Card Top: Name + Score */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }} title={`${candidate.firstName || ''} ${candidate.lastName || ''}`}>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }} title={`${candidate.firstName || ''} ${candidate.lastName || ''}`}>
                             {candidate.firstName || 'Candidate'} {candidate.lastName || ''}
                           </span>
                           <span style={{
                             fontSize: '10px', fontWeight: '800',
                             backgroundColor: scoreBg, color: scoreColor,
-                            padding: '2px 5px', borderRadius: '4px',
+                            padding: '2px 5px', borderRadius: '4px', border: `1px solid ${scoreColor}40`,
                             display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0
                           }} title={hasAgentScore ? "AI Screened Score" : "Heuristic Score"}>
                             {hasAgentScore && <span>🤖</span>}
@@ -189,7 +189,7 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                         <p style={{ 
                           margin: 0, 
                           fontSize: '11px', 
-                          color: '#64748b', 
+                          color: 'var(--text-secondary)', 
                           lineHeight: '1.3',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -202,7 +202,7 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                         </p>
 
                         {/* Card Bottom Actions: Dropdown status + Quick Move arrows */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
                           {/* Left quick move button */}
                           <button
                             onClick={() => {
@@ -213,9 +213,9 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                             }}
                             disabled={stage.id === PIPELINE_STAGES[0].id}
                             style={{
-                              padding: '2px 5px', border: '1px solid #e2e8f0', borderRadius: '4px',
-                              backgroundColor: '#fff', cursor: stage.id === PIPELINE_STAGES[0].id ? 'not-allowed' : 'pointer',
-                              fontSize: '10px', color: '#64748b', opacity: stage.id === PIPELINE_STAGES[0].id ? 0.3 : 1
+                              padding: '2px 5px', border: '1px solid var(--border-color)', borderRadius: '4px',
+                              backgroundColor: 'var(--bg-surface)', cursor: stage.id === PIPELINE_STAGES[0].id ? 'not-allowed' : 'pointer',
+                              fontSize: '10px', color: 'var(--text-secondary)', opacity: stage.id === PIPELINE_STAGES[0].id ? 0.3 : 1
                             }}
                           >
                             ◀
@@ -226,8 +226,8 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                             value={stage.id}
                             onChange={(e) => handleStageSelect(candidate, e)}
                             style={{
-                              flexGrow: 1, padding: '3px 4px', border: '1px solid #e2e8f0', borderRadius: '4px',
-                              fontSize: '10px', color: '#334155', outline: 'none', backgroundColor: '#fff',
+                              flexGrow: 1, padding: '3px 4px', border: '1px solid var(--border-color)', borderRadius: '4px',
+                              fontSize: '10px', color: 'var(--text-primary)', outline: 'none', backgroundColor: 'var(--bg-surface)',
                               cursor: 'pointer', maxWidth: '90px'
                             }}
                           >
@@ -246,9 +246,9 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                             }}
                             disabled={stage.id === PIPELINE_STAGES[PIPELINE_STAGES.length - 1].id}
                             style={{
-                              padding: '2px 5px', border: '1px solid #e2e8f0', borderRadius: '4px',
-                              backgroundColor: '#fff', cursor: stage.id === PIPELINE_STAGES[PIPELINE_STAGES.length - 1].id ? 'not-allowed' : 'pointer',
-                              fontSize: '10px', color: '#64748b', opacity: stage.id === PIPELINE_STAGES[PIPELINE_STAGES.length - 1].id ? 0.3 : 1
+                              padding: '2px 5px', border: '1px solid var(--border-color)', borderRadius: '4px',
+                              backgroundColor: 'var(--bg-surface)', cursor: stage.id === PIPELINE_STAGES[PIPELINE_STAGES.length - 1].id ? 'not-allowed' : 'pointer',
+                              fontSize: '10px', color: 'var(--text-secondary)', opacity: stage.id === PIPELINE_STAGES[PIPELINE_STAGES.length - 1].id ? 0.3 : 1
                             }}
                           >
                             ▶
@@ -260,12 +260,12 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                           <button
                             onClick={() => navigate('/candidates', { state: { highlightCandidateUrl: candidate.linkedinUrl || candidate.url } })}
                             style={{
-                              width: '100%', padding: '4px 0', border: 'none', borderRadius: '4px',
-                              backgroundColor: '#f8fafc', color: '#2563eb', cursor: 'pointer',
+                              width: '100%', padding: '4px 0', border: '1px solid rgba(0, 229, 255, 0.3)', borderRadius: '4px',
+                              backgroundColor: 'rgba(0, 229, 255, 0.1)', color: 'var(--accent)', cursor: 'pointer',
                               fontSize: '10px', fontWeight: '600', transition: 'background-color 0.1s'
                             }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#eff6ff'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0, 229, 255, 0.2)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0, 229, 255, 0.1)'}
                           >
                             View Details 🔍
                           </button>
@@ -273,8 +273,8 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                             <button
                               onClick={() => setViewingReasoning({ candidate, reasoning: candidate.agentReasoning })}
                               style={{
-                                padding: '4px 6px', border: 'none', borderRadius: '4px',
-                                backgroundColor: '#faf5ff', color: '#a855f7', cursor: 'pointer',
+                                padding: '4px 6px', border: '1px solid rgba(192, 132, 252, 0.3)', borderRadius: '4px',
+                                backgroundColor: 'rgba(168, 85, 247, 0.1)', color: '#c084fc', cursor: 'pointer',
                                 fontSize: '10px', fontWeight: '600'
                               }}
                               title="View AI Agent Screening reasoning"
@@ -297,24 +297,24 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
       {viewingReasoning && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex',
+          backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex',
           alignItems: 'center', justifyContent: 'center', padding: '20px'
         }}>
           <div style={{
-            backgroundColor: '#fff', borderRadius: '12px', maxWidth: '600px', width: '100%',
-            maxHeight: '80vh', overflowY: 'auto', padding: '24px', border: '1px solid #e4e4e7',
-            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)'
+            backgroundColor: 'var(--bg-surface)', borderRadius: '12px', maxWidth: '600px', width: '100%',
+            maxHeight: '80vh', overflowY: 'auto', padding: '24px', border: '1px solid var(--border-color)',
+            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e4e4e7', paddingBottom: '12px', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#18181b' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
                 AI Screening Rationale: {viewingReasoning.candidate.firstName} {viewingReasoning.candidate.lastName}
               </h3>
-              <span style={{ fontSize: '13px', fontWeight: '800', color: '#a855f7', backgroundColor: '#faf5ff', padding: '4px 8px', borderRadius: '4px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '800', color: '#c084fc', backgroundColor: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(192, 132, 252, 0.3)', padding: '4px 8px', borderRadius: '4px' }}>
                 Score: {viewingReasoning.candidate.matchScore}/100
               </span>
             </div>
 
-            <div style={{ fontSize: '13px', color: '#3f3f46', lineHeight: '1.6', whiteSpace: 'pre-wrap', backgroundColor: '#fafafa', padding: '14px', borderRadius: '8px', border: '1px solid #e4e4e7' }}>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', whiteSpace: 'pre-wrap', backgroundColor: 'var(--bg-main)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
               {viewingReasoning.reasoning}
             </div>
 
@@ -322,8 +322,8 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
               <button 
                 onClick={() => setViewingReasoning(null)} 
                 style={{
-                  padding: '6px 16px', backgroundColor: '#18181b', color: '#fff', border: 'none',
-                  borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                  padding: '6px 16px', backgroundColor: 'var(--accent)', color: '#000', border: 'none',
+                  borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer'
                 }}
               >
                 Close

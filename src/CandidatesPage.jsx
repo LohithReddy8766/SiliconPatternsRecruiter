@@ -3,12 +3,12 @@ import { useLocation } from 'react-router-dom';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
 
 const STAGE_BADGES = {
-  sourced: { label: 'Sourced', bg: '#f3f4f6', text: '#374151', border: '#e5e7eb' },
-  reached_out: { label: 'Reached Out', bg: '#eff6ff', text: '#1e40af', border: '#bfdbfe' },
-  interviewing: { label: 'Interviewing', bg: '#fef3c7', text: '#92400e', border: '#fde68a' },
-  offer: { label: 'Offer Extended', bg: '#faf5ff', text: '#6b21a8', border: '#e9d5ff' },
-  hired: { label: 'Hired', bg: '#dcfce7', text: '#166534', border: '#bbf7d0' },
-  rejected: { label: 'Rejected', bg: '#fef2f2', text: '#991b1b', border: '#fecaca' }
+  sourced: { label: 'Sourced', bg: 'var(--bg-surface)', text: 'var(--text-secondary)', border: 'var(--border-color)' },
+  reached_out: { label: 'Reached Out', bg: 'rgba(59, 130, 246, 0.15)', text: '#60a5fa', border: 'rgba(96, 165, 250, 0.3)' },
+  interviewing: { label: 'Interviewing', bg: 'rgba(217, 119, 6, 0.15)', text: '#fbbf24', border: 'rgba(251, 191, 36, 0.3)' },
+  offer: { label: 'Offer Extended', bg: 'rgba(168, 85, 247, 0.15)', text: '#c084fc', border: 'rgba(192, 132, 252, 0.3)' },
+  hired: { label: 'Hired', bg: 'rgba(22, 163, 74, 0.15)', text: '#4ade80', border: 'rgba(74, 222, 128, 0.3)' },
+  rejected: { label: 'Rejected', bg: 'rgba(220, 38, 38, 0.15)', text: '#f87171', border: 'rgba(248, 113, 113, 0.3)' }
 };
 
 function safeExtractText(field) {
@@ -35,9 +35,9 @@ function extractSkillsList(profile) {
 }
 
 function getScoreColor(score) {
-  if (score >= 70) return { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' };
-  if (score >= 40) return { bg: '#fef9c3', text: '#a16207', border: '#fef08a' };
-  return { bg: '#f4f4f5', text: '#52525b', border: '#e4e4e7' };
+  if (score >= 70) return { bg: 'rgba(22, 163, 74, 0.15)', text: '#4ade80', border: 'rgba(74, 222, 128, 0.3)' };
+  if (score >= 40) return { bg: 'rgba(217, 119, 6, 0.15)', text: '#fbbf24', border: 'rgba(251, 191, 36, 0.3)' };
+  return { bg: 'var(--bg-main)', text: 'var(--text-secondary)', border: 'var(--border-color)' };
 }
 
 function CandidateCard({ profile, onRemove, isHighlighted }) {
@@ -66,13 +66,13 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
 
   return (
     <div style={{
-      backgroundColor: isHighlighted ? '#f8fafc' : '#fff',
-      border: isHighlighted ? '2px solid #3b82f6' : '1px solid #e4e4e7',
+      backgroundColor: isHighlighted ? 'var(--bg-surface-hover)' : 'var(--bg-surface)',
+      border: isHighlighted ? '2px solid var(--accent)' : '1px solid var(--border-color)',
       borderRadius: '10px',
       overflow: 'hidden',
       transition: 'box-shadow 0.15s ease',
     }}
-      onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+      onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)'}
       onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
     >
       {/* Card Header */}
@@ -82,15 +82,15 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
             <div style={{
               width: '40px', height: '40px', flexShrink: 0,
-              backgroundColor: '#18181b', borderRadius: '50%',
+              backgroundColor: 'var(--accent)', borderRadius: '50%',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fff', fontWeight: '700', fontSize: '14px',
+              color: '#000', fontWeight: '700', fontSize: '14px',
             }}>
               {(safeExtractText(profile.firstName)[0] || '?').toUpperCase()}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '15px', fontWeight: '700', color: '#18181b' }}>{name}</span>
+                <span style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>{name}</span>
                 <span style={{ 
                   fontSize: '10px', 
                   fontWeight: '600', 
@@ -103,15 +103,15 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
                   {STAGE_BADGES[profile.status || 'sourced'].label}
                 </span>
                 {(safeExtractText(profile.headline) + ' ' + title).toLowerCase().includes('open to work') && (
-                  <span style={{ fontSize: '10px', fontWeight: '600', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 7px', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: '10px', fontWeight: '600', color: '#4ade80', backgroundColor: 'rgba(22, 163, 74, 0.15)', padding: '2px 7px', borderRadius: '10px', border: '1px solid rgba(74, 222, 128, 0.3)' }}>
                     OPEN TO WORK
                   </span>
                 )}
               </div>
-              <p style={{ margin: '3px 0 0', fontSize: '13px', color: '#52525b', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <p style={{ margin: '3px 0 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {title}
               </p>
-              <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#a1a1aa' }}>📍 {location}</p>
+              <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>📍 {location}</p>
             </div>
           </div>
 
@@ -131,8 +131,8 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
               <a href={url} target="_blank" rel="noopener noreferrer" style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '30px', height: '30px',
-                backgroundColor: '#0a66c2', borderRadius: '6px',
-                color: '#fff', fontSize: '12px', fontWeight: '700',
+                backgroundColor: 'rgba(0, 229, 255, 0.1)', borderRadius: '6px', border: '1px solid rgba(0, 229, 255, 0.3)',
+                color: 'var(--accent)', fontSize: '12px', fontWeight: '700',
                 textDecoration: 'none', flexShrink: 0,
               }}>in</a>
             )}
@@ -141,8 +141,8 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '30px', height: '30px',
-                backgroundColor: '#f4f4f5', border: '1px solid #e4e4e7',
-                borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#52525b',
+                backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)',
+                borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)',
                 transition: 'all 0.15s',
               }}
             >
@@ -153,8 +153,8 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '30px', height: '30px',
-                backgroundColor: '#fef2f2', border: '1px solid #fecaca',
-                borderRadius: '6px', cursor: 'pointer', fontSize: '13px', color: '#dc2626',
+                backgroundColor: 'rgba(220, 38, 38, 0.1)', border: '1px solid rgba(248, 113, 113, 0.3)',
+                borderRadius: '6px', cursor: 'pointer', fontSize: '13px', color: '#f87171',
               }}
               title="Remove from database"
             >×</button>
@@ -168,13 +168,13 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
               <span key={i} style={{
                 padding: '2px 8px', borderRadius: '4px',
                 fontSize: '11px', fontWeight: '500',
-                backgroundColor: ASIC_SKILLS.includes(skill) ? '#eff6ff' : '#f4f4f5',
-                color: ASIC_SKILLS.includes(skill) ? '#1d4ed8' : '#52525b',
-                border: ASIC_SKILLS.includes(skill) ? '1px solid #bfdbfe' : '1px solid #e4e4e7',
+                backgroundColor: ASIC_SKILLS.includes(skill) ? 'rgba(0, 229, 255, 0.1)' : 'var(--bg-main)',
+                color: ASIC_SKILLS.includes(skill) ? 'var(--accent)' : 'var(--text-secondary)',
+                border: ASIC_SKILLS.includes(skill) ? '1px solid rgba(0, 229, 255, 0.3)' : '1px solid var(--border-color)',
               }}>{skill}</span>
             ))}
             {skills.split(', ').length > 8 && (
-              <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', color: '#a1a1aa', backgroundColor: '#f4f4f5', border: '1px solid #e4e4e7' }}>
+              <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
                 +{skills.split(', ').length - 8} more
               </span>
             )}
@@ -184,17 +184,17 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
 
       {/* Expanded Details */}
       {expanded && (
-        <div style={{ borderTop: '1px solid #f4f4f5', padding: '16px 20px', backgroundColor: '#fafafa', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ borderTop: '1px solid var(--border-color)', padding: '16px 20px', backgroundColor: 'var(--bg-main)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {about && about !== 'N/A' && (
             <div>
-              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>About</p>
-              <p style={{ margin: 0, fontSize: '13px', color: '#3f3f46', lineHeight: 1.6 }}>{about.substring(0, 300)}{about.length > 300 ? '...' : ''}</p>
+              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>About</p>
+              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.6 }}>{about.substring(0, 300)}{about.length > 300 ? '...' : ''}</p>
             </div>
           )}
           {experience && (
             <div>
-              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Experience</p>
-              <p style={{ margin: 0, fontSize: '13px', color: '#3f3f46', lineHeight: 1.6 }}>{experience}</p>
+              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Experience</p>
+              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.6 }}>{experience}</p>
             </div>
           )}
           {education && (
@@ -204,9 +204,9 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
             </div>
           )}
           {profile.agentReasoning && (
-            <div style={{ borderLeft: '3px solid #c084fc', paddingLeft: '10px', margin: '8px 0', backgroundColor: 'rgba(192, 132, 252, 0.08)', padding: '10px', borderRadius: '6px' }}>
-              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🤖 AI Agent Reasoning</p>
-              <p style={{ margin: 0, fontSize: '13px', color: '#6b21a8', lineHeight: 1.6 }}>{profile.agentReasoning}</p>
+            <div style={{ borderLeft: '3px solid var(--accent)', paddingLeft: '10px', margin: '8px 0', backgroundColor: 'rgba(0, 229, 255, 0.05)', padding: '10px', borderRadius: '6px' }}>
+              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🤖 AI Agent Reasoning</p>
+              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.6 }}>{profile.agentReasoning}</p>
             </div>
           )}
           {profile._searchedSkills && (
@@ -376,17 +376,17 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
 
   const inputStyle = {
     width: '100%', padding: '9px 12px', boxSizing: 'border-box',
-    borderRadius: '6px', border: '1px solid #d4d4d8',
-    fontSize: '13px', color: '#18181b', outline: 'none',
-    fontFamily: 'inherit', backgroundColor: '#fff',
+    borderRadius: '6px', border: '1px solid var(--border-color)',
+    fontSize: '13px', color: 'var(--text-primary)', outline: 'none',
+    fontFamily: 'inherit', backgroundColor: 'var(--bg-main)',
   };
 
   if (masterLeads.length === 0) {
     return (
       <div style={{ padding: '80px 20px', textAlign: 'center' }}>
         <div style={{ fontSize: '40px', marginBottom: '16px' }}>🗂️</div>
-        <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: '700', color: '#18181b' }}>No candidates yet</h2>
-        <p style={{ margin: 0, fontSize: '14px', color: '#71717a' }}>Run a search from the Search page to populate your Master Database.</p>
+        <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)' }}>No candidates yet</h2>
+        <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)' }}>Run a search from the Search page to populate your Master Database.</p>
       </div>
     );
   }
@@ -397,30 +397,30 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       {/* Page Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: '700', color: '#18181b', letterSpacing: '-0.02em' }}>
+          <h1 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
             Candidate Database
           </h1>
-          <p style={{ margin: 0, fontSize: '13px', color: '#71717a' }}>
+          <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
             {filteredCandidates.length} of {masterLeads.length} candidates
-            {hasActiveFilters && <span style={{ color: '#2563eb', fontWeight: '600' }}> · Filters active</span>}
+            {hasActiveFilters && <span style={{ color: 'var(--accent)', fontWeight: '600' }}> · Filters active</span>}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={downloadCSV} style={{ padding: '8px 16px', backgroundColor: '#18181b', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+          <button onClick={downloadCSV} style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', color: '#000', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '700' }}>
             ⬇️ Export CSV
           </button>
-          <button onClick={clearAll} style={{ padding: '8px 12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+          <button onClick={clearAll} style={{ padding: '8px 12px', backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
             Clear All
           </button>
         </div>
       </div>
 
       {/* Filter Panel */}
-      <div style={{ backgroundColor: '#fff', border: '1px solid #e4e4e7', borderRadius: '10px', padding: '20px', marginBottom: '20px' }}>
+      <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', marginBottom: '20px' }}>
         {/* Row 1: Search + Sort + View */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '12px', marginBottom: '16px', alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
-            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#a1a1aa', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
+            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
             <input
               type="text"
               placeholder="Search by name, title, skill, location..."
@@ -435,13 +435,14 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
             <option value="name_asc">Name: A → Z</option>
             <option value="name_desc">Name: Z → A</option>
           </select>
-          <div style={{ display: 'flex', gap: '4px', border: '1px solid #e4e4e7', borderRadius: '6px', padding: '3px', backgroundColor: '#f4f4f5' }}>
+          <div style={{ display: 'flex', gap: '4px', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '3px', backgroundColor: 'var(--bg-main)' }}>
             {[['list', '☰'], ['compact', '⊞']].map(([mode, icon]) => (
               <button key={mode} onClick={() => setViewMode(mode)} style={{
                 padding: '5px 10px', border: 'none', borderRadius: '4px', cursor: 'pointer',
                 fontSize: '14px', transition: 'all 0.1s',
-                backgroundColor: viewMode === mode ? '#fff' : 'transparent',
-                boxShadow: viewMode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+                backgroundColor: viewMode === mode ? 'var(--bg-surface-hover)' : 'transparent',
+                color: viewMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)',
+                boxShadow: viewMode === mode ? '0 1px 2px rgba(0,0,0,0.5)' : 'none',
               }}>{icon}</button>
             ))}
           </div>
@@ -466,12 +467,12 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px', whiteSpace: 'nowrap' }}>
             <input type="checkbox" id="filterOTW" checked={filterOpenToWork} onChange={e => setFilterOpenToWork(e.target.checked)}
-              style={{ width: '14px', height: '14px', accentColor: '#18181b', cursor: 'pointer' }} />
-            <label htmlFor="filterOTW" style={{ fontSize: '13px', fontWeight: '500', color: '#3f3f46', cursor: 'pointer', userSelect: 'none' }}>Open to Work</label>
+              style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
+            <label htmlFor="filterOTW" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>Open to Work</label>
           </div>
 
           {hasActiveFilters && (
-            <button onClick={resetFilters} style={{ padding: '8px 14px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>
+            <button onClick={resetFilters} style={{ padding: '8px 14px', backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>
               Clear Filters
             </button>
           )}
@@ -480,7 +481,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
         {/* Row 3: Skill chips */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
-            <p style={{ margin: 0, fontSize: '11px', fontWeight: '600', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Filter by Skill (must have all selected)</p>
+            <p style={{ margin: 0, fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Filter by Skill (must have all selected)</p>
           </div>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={{ ...inputStyle, width: '200px' }}>
@@ -495,19 +496,19 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
               style={{ ...inputStyle, flex: 1, maxWidth: '300px' }}
             />
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '150px', overflowY: 'auto', padding: '10px', backgroundColor: '#fafafa', border: '1px solid #e4e4e7', borderRadius: '6px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '150px', overflowY: 'auto', padding: '10px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
             {filterSkills.map(skill => (
                 <button key={skill} onClick={() => toggleFilterSkill(skill)} style={{
                   padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
                   cursor: 'pointer', transition: 'all 0.15s',
-                  border: '1px solid #1d4ed8', backgroundColor: '#eff6ff', color: '#1d4ed8',
+                  border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: '#000',
                 }}>{skill} ✕</button>
             ))}
             {filteredMasterSkills.filter(s => !filterSkills.includes(s)).map(skill => (
                 <button key={skill} onClick={() => toggleFilterSkill(skill)} style={{
                   padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
                   cursor: 'pointer', transition: 'all 0.15s',
-                  border: '1px solid #e4e4e7', backgroundColor: '#fff', color: '#52525b',
+                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
                 }}>{skill}</button>
             ))}
           </div>
@@ -518,9 +519,9 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       {filteredCandidates.length > 0 && (
         <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
           {[
-            { label: 'High Match (70+)', count: filteredCandidates.filter(p => p.matchScore >= 70).length, color: '#16a34a', bg: '#dcfce7' },
-            { label: 'Mid Match (40–69)', count: filteredCandidates.filter(p => p.matchScore >= 40 && p.matchScore < 70).length, color: '#a16207', bg: '#fef9c3' },
-            { label: 'Low Match (<40)', count: filteredCandidates.filter(p => p.matchScore < 40).length, color: '#52525b', bg: '#f4f4f5' },
+            { label: 'High Match (70+)', count: filteredCandidates.filter(p => p.matchScore >= 70).length, color: '#4ade80', bg: 'rgba(22, 163, 74, 0.15)' },
+            { label: 'Mid Match (40–69)', count: filteredCandidates.filter(p => p.matchScore >= 40 && p.matchScore < 70).length, color: '#fbbf24', bg: 'rgba(217, 119, 6, 0.15)' },
+            { label: 'Low Match (<40)', count: filteredCandidates.filter(p => p.matchScore < 40).length, color: 'var(--text-secondary)', bg: 'var(--bg-main)' },
           ].map(({ label, count, color, bg }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', backgroundColor: bg, borderRadius: '6px' }}>
               <span style={{ fontSize: '18px', fontWeight: '800', color, lineHeight: 1 }}>{count}</span>
@@ -532,11 +533,11 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
 
       {/* Candidates List */}
       {filteredCandidates.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#fff', borderRadius: '10px', border: '1px solid #e4e4e7' }}>
+        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: 'var(--bg-surface)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔍</div>
-          <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: '#18181b' }}>No candidates match your filters</h3>
-          <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#71717a' }}>Try loosening the filters or clearing them entirely.</p>
-          <button onClick={resetFilters} style={{ padding: '8px 20px', backgroundColor: '#18181b', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+          <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>No candidates match your filters</h3>
+          <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-secondary)' }}>Try loosening the filters or clearing them entirely.</p>
+          <button onClick={resetFilters} style={{ padding: '8px 20px', backgroundColor: 'var(--accent)', color: '#000', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '700' }}>
             Reset All Filters
           </button>
         </div>
@@ -557,17 +558,17 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
             const skills = extractSkillsList(p);
             return (
               <div key={idx} style={{
-                backgroundColor: '#fff', border: '1px solid #e4e4e7',
+                backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)',
                 borderRadius: '10px', padding: '14px 16px',
                 transition: 'box-shadow 0.15s',
               }}
-                onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+                onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)'}
                 onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '2px' }}>
-                      <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{name}</p>
+                      <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{name}</p>
                       <span style={{ 
                         fontSize: '9px', 
                         fontWeight: '600', 
@@ -582,25 +583,25 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
                         {STAGE_BADGES[p.status || 'sourced'].label}
                       </span>
                     </div>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title.substring(0, 50)}</p>
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title.substring(0, 50)}</p>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', marginLeft: '8px', flexShrink: 0 }}>
                     <span style={{ backgroundColor: scoreColors.bg, color: scoreColors.text, border: `1px solid ${scoreColors.border}`, padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '800' }}>
                       {p.matchScore}
                     </span>
                     {url && url !== 'N/A' && (
-                      <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: '#0a66c2', borderRadius: '4px', color: '#fff', fontSize: '10px', fontWeight: '700', textDecoration: 'none' }}>in</a>
+                      <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: 'rgba(0, 229, 255, 0.1)', borderRadius: '4px', color: 'var(--accent)', border: '1px solid rgba(0, 229, 255, 0.3)', fontSize: '10px', fontWeight: '700', textDecoration: 'none' }}>in</a>
                     )}
-                    <button onClick={() => removeCandidate(p)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#dc2626' }}>×</button>
+                    <button onClick={() => removeCandidate(p)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: 'rgba(220, 38, 38, 0.1)', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#f87171' }}>×</button>
                   </div>
                 </div>
-                <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#a1a1aa' }}>📍 {safeExtractText(p.location).split(',')[0]}</p>
+                <p style={{ margin: '0 0 8px', fontSize: '11px', color: 'var(--text-secondary)' }}>📍 {safeExtractText(p.location).split(',')[0]}</p>
                 {skills && skills !== '' && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                     {skills.split(', ').slice(0, 5).map((skill, i) => (
-                      <span key={i} style={{ padding: '2px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: '500', backgroundColor: '#f4f4f5', color: '#52525b', border: '1px solid #e4e4e7' }}>{skill}</span>
+                      <span key={i} style={{ padding: '2px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: '500', backgroundColor: 'var(--bg-main)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>{skill}</span>
                     ))}
-                    {skills.split(', ').length > 5 && <span style={{ padding: '2px 6px', fontSize: '10px', color: '#a1a1aa' }}>+{skills.split(', ').length - 5}</span>}
+                    {skills.split(', ').length > 5 && <span style={{ padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}>+{skills.split(', ').length - 5}</span>}
                   </div>
                 )}
               </div>
