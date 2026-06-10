@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { runCandidateAgent } from './agent.js';
 
 export default function AIAgentPage({ masterLeads, setMasterLeads }) {
@@ -12,6 +12,41 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
 
   // Selected candidates to run agent on
   const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
+
+  // Search & Filter State for candidate pool selection
+  const [poolSearch, setPoolSearch] = useState('');
+  const [poolStatusFilter, setPoolStatusFilter] = useState('all');
+  const [poolScreeningFilter, setPoolScreeningFilter] = useState('all');
+
+  // Filtered candidate list for selection
+  const filteredPool = useMemo(() => {
+    return masterLeads.map((candidate, idx) => ({ candidate, idx })).filter(({ candidate }) => {
+      // 1. Text Search (name & current title)
+      if (poolSearch.trim()) {
+        const q = poolSearch.toLowerCase();
+        const firstName = candidate.firstName || '';
+        const lastName = candidate.lastName || '';
+        const name = `${firstName} ${lastName}`.toLowerCase();
+        const title = (candidate.currentTitle || candidate.jobTitle || candidate.headline || '').toLowerCase();
+        if (!name.includes(q) && !title.includes(q)) return false;
+      }
+
+      // 2. Status Filter
+      if (poolStatusFilter !== 'all') {
+        const status = candidate.status || 'sourced';
+        if (status !== poolStatusFilter) return false;
+      }
+
+      // 3. AI Screening Filter
+      if (poolScreeningFilter !== 'all') {
+        const hasScore = candidate.agentScore !== undefined;
+        if (poolScreeningFilter === 'unscreened' && hasScore) return false;
+        if (poolScreeningFilter === 'screened' && !hasScore) return false;
+      }
+
+      return true;
+    });
+  }, [masterLeads, poolSearch, poolStatusFilter, poolScreeningFilter]);
 
   // Running states
   const [isRunning, setIsRunning] = useState(false);
@@ -56,10 +91,15 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
   };
 
   const handleSelectAll = () => {
-    if (selectedCandidateIds.length === masterLeads.length) {
-      setSelectedCandidateIds([]);
+    const filteredIndexes = filteredPool.map(item => item.idx);
+    const allSelected = filteredIndexes.every(idx => selectedCandidateIds.includes(idx));
+    
+    if (allSelected) {
+      // Deselect only the filtered items
+      setSelectedCandidateIds(prev => prev.filter(idx => !filteredIndexes.includes(idx)));
     } else {
-      setSelectedCandidateIds(masterLeads.map((_, idx) => idx));
+      // Select all filtered items (merge with existing selections)
+      setSelectedCandidateIds(prev => [...new Set([...prev, ...filteredIndexes])]);
     }
   };
 
@@ -241,7 +281,12 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' }}>
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', 
+        gap: '24px', 
+        alignItems: 'start' 
+      }}>
         
         {/* Left Column: Config, Target requirements, and Candidate Selection */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -323,18 +368,90 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                     borderRadius: '4px', backgroundColor: 'var(--bg-main)', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: '600'
                   }}
                 >
-                  {selectedCandidateIds.length === masterLeads.length ? 'Deselect All' : 'Select All'}
+                  {filteredPool.length > 0 && filteredPool.map(item => item.idx).every(idx => selectedCandidateIds.includes(idx)) ? 'Deselect Filtered' : 'Select Filtered'}
                 </button>
               )}
             </div>
+
+            {/* Search and Filters for Candidate Pool */}
+            {masterLeads.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search candidate name or title..."
+                  value={poolSearch}
+                  onChange={e => setPoolSearch(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 12px', boxSizing: 'border-box',
+                    borderRadius: '6px', border: '1px solid var(--border-color)',
+                    fontSize: '12px', color: 'var(--text-primary)', backgroundColor: 'var(--bg-main)',
+                    outline: 'none'
+                  }}
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <select
+                    value={poolStatusFilter}
+                    onChange={e => setPoolStatusFilter(e.target.value)}
+                    style={{
+                      width: '100%', padding: '7px 8px', borderRadius: '6px', border: '1px solid var(--border-color)',
+                      fontSize: '11px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-main)',
+                      outline: 'none', cursor: 'pointer'
+                    }}
+                  >
+                    <option value="all">All Stages</option>
+                    <option value="sourced">Sourced</option>
+                    <option value="reached_out">Reached Out</option>
+                    <option value="interviewing">Interviewing</option>
+                    <option value="offer">Offer Extended</option>
+                    <option value="hired">Hired</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                  <select
+                    value={poolScreeningFilter}
+                    onChange={e => setPoolScreeningFilter(e.target.value)}
+                    style={{
+                      width: '100%', padding: '7px 8px', borderRadius: '6px', border: '1px solid var(--border-color)',
+                      fontSize: '11px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-main)',
+                      outline: 'none', cursor: 'pointer'
+                    }}
+                  >
+                    <option value="all">All AI Grades</option>
+                    <option value="unscreened">Not Screened Yet</option>
+                    <option value="screened">Screened by Agent</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {masterLeads.length > 0 && (
+              <button
+                onClick={handleRunAgent}
+                disabled={isRunning || selectedCandidateIds.length === 0}
+                style={{
+                  width: '100%', marginBottom: '16px', padding: '12px',
+                  backgroundColor: isRunning ? 'var(--bg-main)' : selectedCandidateIds.length === 0 ? 'var(--bg-main)' : 'var(--accent)',
+                  color: selectedCandidateIds.length === 0 && !isRunning ? 'var(--text-secondary)' : '#000',
+                  border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '13px', fontWeight: '700',
+                  cursor: isRunning || selectedCandidateIds.length === 0 ? 'not-allowed' : 'pointer',
+                  boxShadow: isRunning ? 'none' : '0 4px 10px rgba(0,0,0,0.5)',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                {isRunning ? '🤖 Agent Executing Loop...' : `Launch Agent on ${selectedCandidateIds.length} Candidate(s)`}
+              </button>
+            )}
 
             {masterLeads.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
                 No candidates available. Please run a scrape search first!
               </div>
+            ) : filteredPool.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic' }}>
+                No candidates match the active search/filters.
+              </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxH: '260px', overflowY: 'auto', paddingRight: '4px' }}>
-                {masterLeads.map((candidate, idx) => {
+                {filteredPool.map(({ candidate, idx }) => {
                   const isSelected = selectedCandidateIds.includes(idx);
                   const isCurrent = currentRunningIndex === idx;
                   const candUrl = candidate.linkedinUrl || candidate.url || `candidate-${idx}`;
@@ -389,22 +506,6 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                 })}
               </div>
             )}
-
-            <button
-              onClick={handleRunAgent}
-              disabled={isRunning || selectedCandidateIds.length === 0}
-              style={{
-                width: '100%', marginTop: '16px', padding: '12px',
-                backgroundColor: isRunning ? 'var(--bg-main)' : selectedCandidateIds.length === 0 ? 'var(--bg-main)' : 'var(--accent)',
-                color: selectedCandidateIds.length === 0 && !isRunning ? 'var(--text-secondary)' : '#000',
-                border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '13px', fontWeight: '700',
-                cursor: isRunning || selectedCandidateIds.length === 0 ? 'not-allowed' : 'pointer',
-                boxShadow: isRunning ? 'none' : '0 4px 10px rgba(0,0,0,0.5)',
-                transition: 'background-color 0.2s'
-              }}
-            >
-              {isRunning ? '🤖 Agent Executing Loop...' : `Launch Agent on ${selectedCandidateIds.length} Candidate(s)`}
-            </button>
           </div>
 
         </div>
@@ -446,7 +547,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                   else if (log.type === 'system') { color = 'var(--text-secondary)'; }
 
                   return (
-                    <div key={index} style={{ color, fontWeight, whiteSpace: 'pre-wrap', marginBottom: '8px' }}>
+                    <div key={index} style={{ color, fontWeight, whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginBottom: '8px' }}>
                       {log.text}
                     </div>
                   );

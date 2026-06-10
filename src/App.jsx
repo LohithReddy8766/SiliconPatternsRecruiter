@@ -67,7 +67,12 @@ function calculateCandidateScore(profile, selectedSkills, targetLocation, target
     });
   }
 
-  if (targetLocation && location.includes(targetLocation.toLowerCase())) score += 25;
+  if (targetLocation) {
+    const targetLocList = (Array.isArray(targetLocation) ? targetLocation : targetLocation.split(','))
+      .map(loc => loc.trim().toLowerCase())
+      .filter(Boolean);
+    if (targetLocList.some(targetLoc => location.includes(targetLoc))) score += 25;
+  }
 
   const designationList = Array.isArray(targetDesignations) ? targetDesignations : [targetDesignations];
   if (designationList.some(d => d && currentTitle.includes(d.toLowerCase()))) score += 25;
@@ -240,9 +245,11 @@ function SearchPage({ masterLeads, setMasterLeads }) {
 
       const designationTitles = designation.split(',').map(d => d.trim()).filter(Boolean);
 
+      const targetLocations = location.split(',').map(l => l.trim()).filter(Boolean);
+
       const searchInput = {
         searchQuery: finalQuery,
-        locations: [location],
+        locations: targetLocations,
         currentJobTitles: designationTitles,
         ...(experience !== 'any' && { yearsOfExperienceIds: [experience] }),
         profileScraperMode: "Full",
@@ -426,8 +433,8 @@ function SearchPage({ masterLeads, setMasterLeads }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div>
-              <label style={labelStyle}>Target Location</label>
-              <input type="text" value={location} onChange={e => setLocation(e.target.value)} style={inputStyle} required />
+              <label style={labelStyle}>Target Location(s) (comma-separated)</label>
+              <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Bengaluru, Hyderabad" style={inputStyle} required />
             </div>
             <div>
               <label style={labelStyle}>Target Companies (Optional)</label>

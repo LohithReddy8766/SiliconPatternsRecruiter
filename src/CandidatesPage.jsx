@@ -65,6 +65,111 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
     education = profile.education.slice(0, 2).map(e => `${e.degreeName || 'Degree'} · ${e.schoolName || 'Institution'}`).join(' | ');
   }
 
+  // AI Outreach States
+  const [showOutreach, setShowOutreach] = useState(false);
+  const [customContext, setCustomContext] = useState('');
+  const [outreachLoading, setOutreachLoading] = useState(false);
+  const [outreachError, setOutreachError] = useState('');
+  const [outreachSequence, setOutreachSequence] = useState(null);
+  const [activeOutreachTab, setActiveOutreachTab] = useState('linkedin');
+  const [copiedTab, setCopiedTab] = useState(null);
+
+  const generateOutreach = async () => {
+    const apiKey = localStorage.getItem('siliconPatternsGroqApiKey') || '';
+    if (!apiKey.trim()) {
+      setOutreachError('Please set a Groq API Key in the Settings tab first.');
+      return;
+    }
+
+    setOutreachLoading(true);
+    setOutreachError('');
+    setOutreachSequence(null);
+
+    const promptMessages = [
+      {
+        role: 'system',
+        content: `You are an expert technical recruiter sourcing elite engineering talent (particularly in ASIC/VLSI, verification, hardware design, and physical design).
+Generate a personalized, high-conversion 3-step outreach sequence:
+1. A brief LinkedIn Connection Request (strictly under 300 characters, clear, concise).
+2. A direct Initial Outreach Email (compelling subject line, short, highlighting candidate background match, clear call to action).
+3. A short follow-up email.
+
+Return your response ONLY as a valid JSON object matching the schema below:
+{
+  "linkedin_invite": "LinkedIn connection message...",
+  "initial_email": "Subject: ...\\n\\nBody...",
+  "follow_up": "Subject: ...\\n\\nBody..."
+}
+Do not return any other text, reasoning, markdown or explanation before or after the JSON.`
+      },
+      {
+        role: 'user',
+        content: `Candidate Details:
+Name: ${name}
+Title: ${title}
+Location: ${location}
+Skills: ${skills}
+About: ${about}
+Recent Roles: ${experience}
+Education: ${education}
+
+Recruiter's target requirements:
+Target Designation/Skills: ${profile._searchedDesignation || ''} (${profile._searchedSkills?.join(', ') || ''})
+Company/Role Pitch: ${customContext || 'General pitch matching the candidate\'s expertise'}
+
+Generate the JSON outreach sequence now.`
+      }
+    ];
+
+    let retries = 3;
+    let delay = 2000;
+    while (retries > 0) {
+      try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: "llama-3.1-8b-instant",
+            messages: promptMessages,
+            temperature: 0.7,
+            max_tokens: 1500,
+            response_format: { type: "json_object" }
+          })
+        });
+
+        if (res.status === 429) {
+          retries--;
+          if (retries === 0) throw new Error("Rate limit exceeded on Groq API. Please try again in a moment.");
+          await new Promise(resolve => setTimeout(resolve, delay));
+          delay *= 2;
+          continue;
+        }
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Failed to call Groq API.");
+        }
+
+        const data = await res.json();
+        const contentText = data.choices[0].message.content;
+        const parsed = JSON.parse(contentText);
+        setOutreachSequence(parsed);
+        setOutreachLoading(false);
+        return;
+      } catch (err) {
+        console.error("Error generating outreach:", err);
+        if (retries === 0 || !err.message.includes("429")) {
+          setOutreachError(err.message || 'An unexpected error occurred during generation.');
+          setOutreachLoading(false);
+          return;
+        }
+      }
+    }
+  };
+
   return (
     <div style={{
       backgroundColor: isHighlighted ? 'var(--bg-surface-hover)' : 'var(--bg-surface)',
@@ -201,7 +306,7 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
           {education && (
             <div>
               <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Education</p>
-              <p style={{ margin: 0, fontSize: '13px', color: '#3f3f46', lineHeight: 1.6 }}>{education}</p>
+              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.6 }}>{education}</p>
             </div>
           )}
           {profile.agentReasoning && (
@@ -216,6 +321,132 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
               <p style={{ margin: 0, fontSize: '12px', color: '#71717a' }}>{profile._searchedSkills.join(', ')} · {profile._searchedDesignation} · {profile._searchedLocation}</p>
             </div>
           )}
+
+          {/* Outreach Campaign Section */}
+          <div style={{ marginTop: '6px', borderTop: '1px dashed var(--border-color)', paddingTop: '14px' }}>
+            <button
+              onClick={() => setShowOutreach(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                backgroundColor: showOutreach ? 'rgba(0, 229, 255, 0.1)' : 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: '600',
+                color: showOutreach ? 'var(--accent)' : 'var(--text-secondary)',
+                cursor: 'pointer', transition: 'all 0.15s'
+              }}
+            >
+              📬 {showOutreach ? 'Close AI Outreach Campaign' : 'AI Outreach Campaign'}
+            </button>
+
+            {showOutreach && (
+              <div style={{ marginTop: '12px', padding: '14px', backgroundColor: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                {!outreachSequence ? (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Custom Company Pitch / Target Role (Optional)
+                    </label>
+                    <textarea
+                      value={customContext}
+                      onChange={e => setCustomContext(e.target.value)}
+                      placeholder="e.g. We are building a RISC-V automotive accelerator and need an assertion-based verification expert..."
+                      style={{
+                        width: '100%', minHeight: '70px', padding: '10px 12px', boxSizing: 'border-box',
+                        borderRadius: '6px', border: '1px solid var(--border-color)',
+                        fontSize: '13px', color: 'var(--text-primary)', outline: 'none',
+                        fontFamily: 'inherit', backgroundColor: 'var(--bg-main)', resize: 'vertical',
+                        marginBottom: '10px'
+                      }}
+                    />
+                    {outreachError && (
+                      <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#f87171' }}>⚠️ {outreachError}</p>
+                    )}
+                    <button
+                      onClick={generateOutreach}
+                      disabled={outreachLoading}
+                      style={{
+                        backgroundColor: outreachLoading ? 'var(--border-color)' : 'var(--accent)',
+                        color: outreachLoading ? 'var(--text-secondary)' : '#000',
+                        border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '12px',
+                        fontWeight: '700', cursor: outreachLoading ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      {outreachLoading ? '⚙️ Generating Campaign Sequence...' : '✨ Generate Campaign Sequence'}
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    {/* Tabs */}
+                    <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '12px' }}>
+                      {[
+                        { id: 'linkedin', label: 'LinkedIn invite' },
+                        { id: 'email', label: 'Initial Email' },
+                        { id: 'followup', label: 'Follow-up Email' }
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => { setActiveOutreachTab(tab.id); setCopiedTab(null); }}
+                          style={{
+                            border: 'none', background: 'none', padding: '6px 12px', borderRadius: '4px',
+                            fontSize: '11px', fontWeight: '600', cursor: 'pointer',
+                            color: activeOutreachTab === tab.id ? 'var(--accent)' : 'var(--text-secondary)',
+                            backgroundColor: activeOutreachTab === tab.id ? 'rgba(0, 229, 255, 0.08)' : 'transparent',
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Tab Content */}
+                    <div style={{ position: 'relative', backgroundColor: 'var(--bg-main)', padding: '12px 14px', borderRadius: '6px', border: '1px solid var(--border-color)', marginBottom: '12px' }}>
+                      <pre style={{
+                        margin: 0, fontSize: '13px', color: 'var(--text-primary)', whiteSpace: 'pre-wrap',
+                        fontFamily: 'inherit', lineHeight: 1.6, minHeight: '80px'
+                      }}>
+                        {activeOutreachTab === 'linkedin' && outreachSequence.linkedin_invite}
+                        {activeOutreachTab === 'email' && outreachSequence.initial_email}
+                        {activeOutreachTab === 'followup' && outreachSequence.follow_up}
+                      </pre>
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <button
+                        onClick={() => {
+                          const text = activeOutreachTab === 'linkedin' ? outreachSequence.linkedin_invite :
+                                       activeOutreachTab === 'email' ? outreachSequence.initial_email :
+                                       outreachSequence.follow_up;
+                          navigator.clipboard.writeText(text);
+                          setCopiedTab(activeOutreachTab);
+                        }}
+                        style={{
+                          backgroundColor: 'rgba(0, 229, 255, 0.1)',
+                          border: '1px solid rgba(0, 229, 255, 0.3)',
+                          color: 'var(--accent)',
+                          borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '700',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                        }}
+                      >
+                        {copiedTab === activeOutreachTab ? '✅ Copied!' : '📋 Copy to Clipboard'}
+                      </button>
+
+                      <button
+                        onClick={() => setOutreachSequence(null)}
+                        style={{
+                          background: 'none', border: 'none', color: 'var(--text-secondary)',
+                          fontSize: '11px', textDecoration: 'underline', cursor: 'pointer'
+                        }}
+                      >
+                        Regenerate / Edit Settings
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
