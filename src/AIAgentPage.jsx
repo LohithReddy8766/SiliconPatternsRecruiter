@@ -3,8 +3,6 @@ import { runCandidateAgent } from './agent.js';
 
 export default function AIAgentPage({ masterLeads, setMasterLeads }) {
   // Config state
-  const [apiKey, setApiKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
   const [selectedModel, setSelectedModel] = useState('llama-3.3-70b-versatile');
   
   // Job Description / Screening Requirement
@@ -24,10 +22,8 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
 
   const consoleEndRef = useRef(null);
 
-  // Load API Key & saved results from localStorage on mount
+  // Load saved results from localStorage on mount
   useEffect(() => {
-    const savedKey = localStorage.getItem('siliconPatternsGroqApiKey') || import.meta.env.VITE_GROQ_API_TOKEN || '';
-    if (savedKey) setApiKey(savedKey);
 
     const savedModel = localStorage.getItem('siliconPatternsGroqModel');
     if (savedModel) setSelectedModel(savedModel);
@@ -43,9 +39,8 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
     }
   }, [agentLogs]);
 
-  // Handle API Key input save
+  // Handle Model Config save
   const handleSaveConfig = () => {
-    localStorage.setItem('siliconPatternsGroqApiKey', apiKey);
     localStorage.setItem('siliconPatternsGroqModel', selectedModel);
     localStorage.setItem('siliconPatternsGroqJd', jobDescription);
     alert('Agent configuration saved successfully!');
@@ -71,8 +66,9 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
   // Run the agent on selected candidates
   const handleRunAgent = async (e) => {
     e.preventDefault();
-    if (!apiKey.trim()) {
-      alert("Please provide a valid Groq API Key to proceed.");
+    const currentApiKey = localStorage.getItem('siliconPatternsGroqApiKey') || import.meta.env.VITE_GROQ_API_TOKEN || '';
+    if (!currentApiKey.trim()) {
+      alert("Please provide a valid Groq API Key in Settings to proceed.");
       return;
     }
     if (selectedCandidateIds.length === 0) {
@@ -103,7 +99,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
         
         // Execute the ReAct loop
         const result = await runCandidateAgent({
-          apiKey,
+          apiKey: currentApiKey,
           model: selectedModel,
           roleRequirements: jobDescription,
           candidate,
@@ -252,35 +248,8 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
           
           {/* Card 1: Configuration */}
           <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>🔑 Groq API & Model Setup</h2>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>⚙️ Model Setup</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
-                  Groq API Key (Stored Locally)
-                </label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input
-                    type={showKey ? 'text' : 'password'}
-                    value={apiKey}
-                    onChange={e => setApiKey(e.target.value)}
-                    placeholder="gsk_..."
-                    style={{
-                      flex: 1, padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border-color)',
-                      fontSize: '13px', color: 'var(--text-primary)', outline: 'none', backgroundColor: 'var(--bg-main)'
-                    }}
-                  />
-                  <button 
-                    type="button" 
-                    onClick={() => setShowKey(!showKey)}
-                    style={{
-                      padding: '0 12px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)',
-                      color: 'var(--text-secondary)', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: '500'
-                    }}
-                  >
-                    {showKey ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-              </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end' }}>
                 <div>

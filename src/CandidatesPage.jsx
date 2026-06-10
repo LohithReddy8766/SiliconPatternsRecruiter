@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
+import { isCandidateOpenToWork } from './App.jsx';
 
 const STAGE_BADGES = {
   sourced: { label: 'Sourced', bg: 'var(--bg-surface)', text: 'var(--text-secondary)', border: 'var(--border-color)' },
@@ -102,7 +103,7 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
                 }}>
                   {STAGE_BADGES[profile.status || 'sourced'].label}
                 </span>
-                {(safeExtractText(profile.headline) + ' ' + title).toLowerCase().includes('open to work') && (
+                {isCandidateOpenToWork(profile) && (
                   <span style={{ fontSize: '10px', fontWeight: '600', color: '#4ade80', backgroundColor: 'rgba(22, 163, 74, 0.15)', padding: '2px 7px', borderRadius: '10px', border: '1px solid rgba(74, 222, 128, 0.3)' }}>
                     OPEN TO WORK
                   </span>
@@ -343,11 +344,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
 
     // Open to work filter
     if (filterOpenToWork) {
-      results = results.filter(p => {
-        const headline = safeExtractText(p.headline).toLowerCase();
-        const title = safeExtractText(p.currentTitle || p.jobTitle).toLowerCase();
-        return headline.includes('open to work') || headline.includes('#opentowork') || title.includes('open to work');
-      });
+      results = results.filter(p => isCandidateOpenToWork(p));
     }
 
     // Sort

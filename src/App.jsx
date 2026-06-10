@@ -4,8 +4,9 @@ import CandidatesPage from './CandidatesPage.jsx';
 import AIAgentPage from './AIAgentPage.jsx';
 import PipelinePage from './PipelinePage.jsx';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
+import logo from './assets/logo.png';
 
-const API_TOKEN = import.meta.env.VITE_APIFY_API_TOKEN || 'YOUR_API_TOKEN_HERE';
+const DEFAULT_APIFY_TOKEN = import.meta.env.VITE_APIFY_API_TOKEN || '';
 const ACTOR_NAME = 'harvestapi~linkedin-profile-search';
 
 function safeExtractText(field) {
@@ -36,6 +37,20 @@ function cleanUrl(url) {
   return url.split('?')[0].toLowerCase().trim();
 }
 
+export function isCandidateOpenToWork(profile) {
+  if (profile.isOpenToWork === true) return true;
+  const headline = safeExtractText(profile.headline).toLowerCase();
+  const title = safeExtractText(profile.currentTitle || profile.jobTitle).toLowerCase();
+  const about = safeExtractText(profile.about || profile.summary).toLowerCase();
+  
+  const keywords = ['open to work', '#opentowork', 'looking for new', 'actively looking', 'seeking new'];
+  for (const kw of keywords) {
+    if (headline.includes(kw) || title.includes(kw) || about.includes(kw)) return true;
+  }
+  if (headline.includes('looking for') || about.includes('looking for')) return true;
+  return false;
+}
+
 function calculateCandidateScore(profile, selectedSkills, targetLocation, targetDesignations) {
   let score = 0;
   const headline = safeExtractText(profile.headline).toLowerCase();
@@ -57,12 +72,12 @@ function calculateCandidateScore(profile, selectedSkills, targetLocation, target
   const designationList = Array.isArray(targetDesignations) ? targetDesignations : [targetDesignations];
   if (designationList.some(d => d && currentTitle.includes(d.toLowerCase()))) score += 25;
 
-  if (headline.includes('open to work') || headline.includes('#opentowork') || headline.includes('looking for')) score += 15;
+  if (isCandidateOpenToWork(profile)) score += 15;
 
   return Math.min(Math.round(score), 100);
 }
 
-function Nav({ candidateCount, dbStatus, onOpenSettings }) {
+function Nav({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme }) {
   const navigate = useNavigate();
   const location = useLocation();
   const isSearch = location.pathname === '/';
@@ -87,39 +102,23 @@ function Nav({ candidateCount, dbStatus, onOpenSettings }) {
   return (
     <nav style={{
       position: 'sticky', top: 0, zIndex: 100,
-      backgroundColor: 'rgba(16, 23, 36, 0.95)',
+      backgroundColor: 'var(--nav-bg)',
       backdropFilter: 'blur(12px)',
       borderBottom: '1px solid var(--border-color)',
       padding: '0 32px',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       height: '56px',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      {/* Left side */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '28px', height: '28px', backgroundColor: 'var(--accent)',
-            borderRadius: '5px', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', color: '#060b13', fontWeight: '800', fontSize: '13px',
-          }}>SP</div>
+          <img src={logo} alt="Silicon Patterns" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
           <span style={{ fontWeight: '700', fontSize: '15px', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
             Silicon Patterns
           </span>
         </div>
         
-        {/* DB Connection Badge */}
-        <span style={{
-          fontSize: '10px', fontWeight: '600',
-          backgroundColor: dbStatus === 'connected' ? 'rgba(22, 163, 74, 0.15)' : dbStatus === 'connecting' ? 'rgba(217, 119, 6, 0.15)' : 'rgba(220, 38, 38, 0.15)', 
-          color: dbStatus === 'connected' ? '#4ade80' : dbStatus === 'connecting' ? '#fbbf24' : '#f87171', 
-          border: `1px solid ${dbStatus === 'connected' ? 'rgba(74, 222, 128, 0.3)' : dbStatus === 'connecting' ? 'rgba(251, 191, 36, 0.3)' : 'rgba(248, 113, 113, 0.3)'}`,
-          padding: '2px 8px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '4px'
-        }}>
-          <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: dbStatus === 'connected' ? '#4ade80' : dbStatus === 'connecting' ? '#fbbf24' : dbStatus === 'error' ? '#f87171' : '#9ca3af' }} />
-          {badge.label}
-        </span>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* Navigation Buttons (Moved to the left) */}
         <div style={{ display: 'flex', gap: '4px' }}>
           {[
             { label: 'Search', path: '/', active: isSearch },
@@ -138,6 +137,41 @@ function Nav({ candidateCount, dbStatus, onOpenSettings }) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Right side */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* DB Connection Badge */}
+        <span style={{
+          fontSize: '10px', fontWeight: '600',
+          backgroundColor: dbStatus === 'connected' ? 'rgba(22, 163, 74, 0.15)' : dbStatus === 'connecting' ? 'rgba(217, 119, 6, 0.15)' : 'rgba(220, 38, 38, 0.15)', 
+          color: dbStatus === 'connected' ? '#4ade80' : dbStatus === 'connecting' ? '#fbbf24' : '#f87171', 
+          border: `1px solid ${dbStatus === 'connected' ? 'rgba(74, 222, 128, 0.3)' : dbStatus === 'connecting' ? 'rgba(251, 191, 36, 0.3)' : 'rgba(248, 113, 113, 0.3)'}`,
+          padding: '2px 8px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '4px'
+        }}>
+          <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: dbStatus === 'connected' ? '#4ade80' : dbStatus === 'connecting' ? '#fbbf24' : dbStatus === 'error' ? '#f87171' : '#9ca3af' }} />
+          {badge.label}
+        </span>
+
+        {/* Theme Toggle */}
+        <button 
+          onClick={toggleTheme}
+          style={{
+            background: 'var(--bg-surface)', border: '1px solid var(--border-color)', cursor: 'pointer',
+            padding: '2px', borderRadius: '16px', display: 'flex', alignItems: 'center',
+            width: '44px', height: '24px', position: 'relative', transition: 'all 0.15s',
+            marginLeft: '8px'
+          }}
+          title="Toggle Theme"
+        >
+          <span style={{ fontSize: '11px', marginLeft: '3px', opacity: theme === 'dark' ? 1 : 0, position: 'absolute', left: '2px' }}>🌙</span>
+          <span style={{ fontSize: '11px', marginRight: '3px', opacity: theme === 'light' ? 1 : 0, position: 'absolute', right: '2px' }}>☀️</span>
+          <div style={{
+            width: '18px', height: '18px', backgroundColor: 'var(--text-primary)', borderRadius: '50%',
+            transform: theme === 'dark' ? 'translateX(20px)' : 'translateX(0)',
+            transition: 'transform 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', zIndex: 1
+          }} />
+        </button>
 
         {/* Settings Button */}
         <button 
@@ -215,8 +249,11 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         maxItems: 50
       };
 
+      const currentApifyToken = localStorage.getItem('siliconPatternsApifyKey') || DEFAULT_APIFY_TOKEN;
+      if (!currentApifyToken) { alert("Please provide an Apify API Key in Settings."); setLoading(false); return; }
+
       setStatus('Contacting Apify servers and launching actor...');
-      const runResponse = await fetch(`https://api.apify.com/v2/acts/${ACTOR_NAME}/runs?token=${API_TOKEN}`, {
+      const runResponse = await fetch(`https://api.apify.com/v2/acts/${ACTOR_NAME}/runs?token=${currentApifyToken}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(searchInput)
       });
@@ -232,7 +269,7 @@ function SearchPage({ masterLeads, setMasterLeads }) {
       let runStatus = 'RUNNING';
       while (runStatus === 'RUNNING' || runStatus === 'READY') {
         await new Promise(resolve => setTimeout(resolve, 4000));
-        const statusResponse = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${API_TOKEN}`);
+        const statusResponse = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${currentApifyToken}`);
         const statusJson = await statusResponse.json();
         runStatus = statusJson.data.status;
         if (runStatus === 'SUCCEEDED') break;
@@ -240,17 +277,12 @@ function SearchPage({ masterLeads, setMasterLeads }) {
       }
 
       setStatus('Extracting dataset and running deduplication algorithm...');
-      const datasetResponse = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${API_TOKEN}`);
+      const datasetResponse = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${currentApifyToken}`);
       if (!datasetResponse.ok) throw new Error('Failed to pull final data array.');
       let profiles = await datasetResponse.json();
 
       if (openToWork) {
-        profiles = profiles.filter(p => {
-          const headline = safeExtractText(p.headline).toLowerCase();
-          const title = safeExtractText(p.currentTitle || p.jobTitle).toLowerCase();
-          const about = safeExtractText(p.about || p.summary).toLowerCase();
-          return headline.includes('open to work') || headline.includes('#opentowork') || title.includes('open to work') || headline.includes('looking for') || about.includes('open to work') || about.includes('#opentowork');
-        });
+        profiles = profiles.filter(p => isCandidateOpenToWork(p));
       }
 
       if (!profiles || profiles.length === 0) {
@@ -482,10 +514,26 @@ export default function App() {
   const [dbStatus, setDbStatus] = useState('local'); // 'local' | 'connecting' | 'connected' | 'error'
   const [showSettings, setShowSettings] = useState(false);
   
+  // Theme State
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('siliconPatternsTheme') || 'dark';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('siliconPatternsTheme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
+  
   // Settings Inputs
   const [inputUrl, setInputUrl] = useState('');
   const [inputKey, setInputKey] = useState('');
   const [inputUseSupabase, setInputUseSupabase] = useState(false);
+  const [inputApifyKey, setInputApifyKey] = useState('');
+  const [inputGroqKey, setInputGroqKey] = useState('');
   const [showSqlHelp, setShowSqlHelp] = useState(false);
 
   // Load configuration on mount
@@ -501,6 +549,8 @@ export default function App() {
     setInputUseSupabase(dbMode);
     setInputUrl(dbUrl);
     setInputKey(dbKey);
+    setInputApifyKey(localStorage.getItem('siliconPatternsApifyKey') || '');
+    setInputGroqKey(localStorage.getItem('siliconPatternsGroqApiKey') || '');
 
     if (dbMode && dbUrl && dbKey) {
       setDbStatus('connecting');
@@ -570,6 +620,11 @@ export default function App() {
   // Connect & migrate local storage to online shared database
   const handleConnectSupabase = async (e) => {
     e.preventDefault();
+    
+    // Save API Keys globally
+    localStorage.setItem('siliconPatternsApifyKey', inputApifyKey);
+    localStorage.setItem('siliconPatternsGroqApiKey', inputGroqKey);
+    
     if (inputUseSupabase && (!inputUrl.trim() || !inputKey.trim())) {
       alert("Please enter a valid Supabase URL and API Key.");
       return;
@@ -665,7 +720,7 @@ alter table candidates disable row level security;`;
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-main)', fontFamily: 'var(--sans)', color: 'var(--text-primary)' }}>
-      <Nav candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} />
+      <Nav candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} theme={theme} toggleTheme={toggleTheme} />
       
       <Routes>
         <Route path="/" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
@@ -701,6 +756,45 @@ alter table candidates disable row level security;`;
             {/* Modal Body: Connection Settings */}
             <form onSubmit={handleConnectSupabase} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>API Keys</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                      Apify API Key (LinkedIn Scraping)
+                    </label>
+                    <input
+                      type="password"
+                      value={inputApifyKey}
+                      onChange={e => setInputApifyKey(e.target.value)}
+                      placeholder="apify_api_..."
+                      style={{
+                        width: '100%', padding: '8px 12px', boxSizing: 'border-box',
+                        borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '13px',
+                        backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                      Groq API Key (AI Agent)
+                    </label>
+                    <input
+                      type="password"
+                      value={inputGroqKey}
+                      onChange={e => setInputGroqKey(e.target.value)}
+                      placeholder="gsk_..."
+                      style={{
+                        width: '100%', padding: '8px 12px', boxSizing: 'border-box',
+                        borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '13px',
+                        backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)'
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Database Settings</h4>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                   <input
                     type="checkbox"

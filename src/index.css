@@ -2,6 +2,7 @@
   --bg-main: #060b13;
   --bg-surface: #101724;
   --bg-surface-hover: #1a2332;
+  --nav-bg: rgba(16, 23, 36, 0.95);
   --accent: #00e5ff;
   --accent-hover: #00cce6;
   --text-primary: #ffffff;
@@ -11,6 +12,18 @@
   --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: 'Montserrat', system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
+}
+
+:root[data-theme='light'] {
+  --bg-main: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f1f5f9;
+  --nav-bg: rgba(248, 250, 252, 0.95);
+  --accent: #00e5ff;
+  --accent-hover: #00cce6;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --border-color: #cbd5e1;
 }
 
 body {
