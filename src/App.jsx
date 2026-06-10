@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import CandidatesPage from './CandidatesPage.jsx';
+import AIAgentPage from './AIAgentPage.jsx';
+import PipelinePage from './PipelinePage.jsx';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
 
 const API_TOKEN = import.meta.env.VITE_APIFY_API_TOKEN || 'YOUR_API_TOKEN_HERE';
@@ -60,11 +62,27 @@ function calculateCandidateScore(profile, selectedSkills, targetLocation, target
   return Math.min(Math.round(score), 100);
 }
 
-function Nav({ candidateCount }) {
+function Nav({ candidateCount, dbStatus, onOpenSettings }) {
   const navigate = useNavigate();
   const location = useLocation();
   const isSearch = location.pathname === '/';
   const isCandidates = location.pathname === '/candidates';
+
+  // Get status color/text
+  const getDbBadge = () => {
+    switch (dbStatus) {
+      case 'connected':
+        return { label: 'Shared DB', bg: '#dcfce7', color: '#166534', border: '#bbf7d0' };
+      case 'connecting':
+        return { label: 'Syncing...', bg: '#fef9c3', color: '#854d0e', border: '#fef08a' };
+      case 'error':
+        return { label: 'DB Error', bg: '#fee2e2', color: '#991b1b', border: '#fecaca' };
+      default:
+        return { label: 'Local Browser', bg: '#f3f4f6', color: '#374151', border: '#e5e7eb' };
+    }
+  };
+
+  const badge = getDbBadge();
 
   return (
     <nav style={{
@@ -76,32 +94,63 @@ function Nav({ candidateCount }) {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       height: '56px',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div style={{
-          width: '28px', height: '28px', backgroundColor: '#18181b',
-          borderRadius: '5px', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', color: 'white', fontWeight: '800', fontSize: '13px',
-        }}>SP</div>
-        <span style={{ fontWeight: '700', fontSize: '15px', color: '#18181b', letterSpacing: '-0.02em' }}>
-          Silicon Patterns
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '28px', height: '28px', backgroundColor: '#18181b',
+            borderRadius: '5px', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', color: 'white', fontWeight: '800', fontSize: '13px',
+          }}>SP</div>
+          <span style={{ fontWeight: '700', fontSize: '15px', color: '#18181b', letterSpacing: '-0.02em' }}>
+            Silicon Patterns
+          </span>
+        </div>
+        
+        {/* DB Connection Badge */}
+        <span style={{
+          fontSize: '10px', fontWeight: '600',
+          backgroundColor: badge.bg, color: badge.color, border: `1px solid ${badge.border}`,
+          padding: '2px 8px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '4px'
+        }}>
+          <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: dbStatus === 'connected' ? '#16a34a' : dbStatus === 'connecting' ? '#d97706' : dbStatus === 'error' ? '#dc2626' : '#9ca3af' }} />
+          {badge.label}
         </span>
       </div>
 
-      <div style={{ display: 'flex', gap: '4px' }}>
-        {[
-          { label: 'Search', path: '/', active: isSearch },
-          { label: candidateCount > 0 ? `Candidates (${candidateCount})` : 'Candidates', path: '/candidates', active: isCandidates },
-        ].map(({ label, path, active }) => (
-          <button key={path} onClick={() => navigate(path)} style={{
-            padding: '6px 14px', borderRadius: '6px', fontSize: '13px',
-            fontWeight: active ? '600' : '500', border: 'none', cursor: 'pointer',
-            backgroundColor: active ? '#18181b' : 'transparent',
-            color: active ? '#ffffff' : '#52525b',
-            transition: 'all 0.15s ease',
-          }}>
-            {label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {[
+            { label: 'Search', path: '/', active: isSearch },
+            { label: candidateCount > 0 ? `Candidates (${candidateCount})` : 'Candidates', path: '/candidates', active: isCandidates },
+            { label: 'AI Agent Screening', path: '/agent', active: location.pathname === '/agent' },
+            { label: 'Pipeline', path: '/pipeline', active: location.pathname === '/pipeline' },
+          ].map(({ label, path, active }) => (
+            <button key={path} onClick={() => navigate(path)} style={{
+              padding: '6px 14px', borderRadius: '6px', fontSize: '13px',
+              fontWeight: active ? '600' : '500', border: 'none', cursor: 'pointer',
+              backgroundColor: active ? '#18181b' : 'transparent',
+              color: active ? '#ffffff' : '#52525b',
+              transition: 'all 0.15s ease',
+            }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Settings Button */}
+        <button 
+          onClick={onOpenSettings}
+          style={{
+            background: 'none', border: '1px solid #e4e4e7', cursor: 'pointer',
+            padding: '6px 10px', borderRadius: '6px', fontSize: '14px', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', color: '#52525b', transition: 'all 0.15s'
+          }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f4f4f5'}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+          title="Workspace Settings"
+        >
+          ⚙️ Settings
+        </button>
       </div>
     </nav>
   );
@@ -422,28 +471,345 @@ function SearchPage({ masterLeads, setMasterLeads }) {
 
 export default function App() {
   const [masterLeads, setMasterLeads] = useState([]);
+  
+  // Database Config State
+  const [useSupabase, setUseSupabase] = useState(false);
+  const [supabaseUrl, setSupabaseUrl] = useState('');
+  const [supabaseKey, setSupabaseKey] = useState('');
+  const [dbStatus, setDbStatus] = useState('local'); // 'local' | 'connecting' | 'connected' | 'error'
+  const [showSettings, setShowSettings] = useState(false);
+  
+  // Settings Inputs
+  const [inputUrl, setInputUrl] = useState('');
+  const [inputKey, setInputKey] = useState('');
+  const [inputUseSupabase, setInputUseSupabase] = useState(false);
+  const [showSqlHelp, setShowSqlHelp] = useState(false);
 
+  // Load configuration on mount
   useEffect(() => {
-    const savedData = localStorage.getItem('siliconPatternsMasterDatabase');
-    if (savedData) {
-      try { setMasterLeads(JSON.parse(savedData)); }
-      catch (e) { console.error("Failed to load local database"); }
+    const dbMode = localStorage.getItem('siliconPatternsDbMode') === 'supabase';
+    const dbUrl = localStorage.getItem('siliconPatternsSupabaseUrl') || '';
+    const dbKey = localStorage.getItem('siliconPatternsSupabaseKey') || '';
+    
+    setUseSupabase(dbMode);
+    setSupabaseUrl(dbUrl);
+    setSupabaseKey(dbKey);
+    
+    setInputUseSupabase(dbMode);
+    setInputUrl(dbUrl);
+    setInputKey(dbKey);
+
+    if (dbMode && dbUrl && dbKey) {
+      setDbStatus('connecting');
+      import('./supabase.js')
+        .then(({ fetchCandidatesFromSupabase }) => {
+          return fetchCandidatesFromSupabase(dbUrl, dbKey);
+        })
+        .then(data => {
+          setMasterLeads(data);
+          setDbStatus('connected');
+        })
+        .catch(err => {
+          console.error("Failed to sync Supabase database on load:", err);
+          setDbStatus('error');
+          // Fallback to local storage candidates
+          const savedData = localStorage.getItem('siliconPatternsMasterDatabase');
+          if (savedData) {
+            try { setMasterLeads(JSON.parse(savedData)); }
+            catch (e) {}
+          }
+        });
+    } else {
+      const savedData = localStorage.getItem('siliconPatternsMasterDatabase');
+      if (savedData) {
+        try { setMasterLeads(JSON.parse(savedData)); }
+        catch (e) { console.error("Failed to load local database", e); }
+      }
     }
   }, []);
 
-  useEffect(() => {
-    if (masterLeads.length > 0) {
-      localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(masterLeads));
+  // Intercept and synchronize all leads mutations (creates, updates, deletes)
+  const syncMasterLeads = async (newLeads) => {
+    const resolvedLeads = typeof newLeads === 'function' ? newLeads(masterLeads) : newLeads;
+    
+    setMasterLeads(resolvedLeads);
+    
+    if (resolvedLeads.length === 0) {
+      localStorage.removeItem('siliconPatternsMasterDatabase');
+    } else {
+      localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(resolvedLeads));
     }
-  }, [masterLeads]);
+
+    if (useSupabase && supabaseUrl && supabaseKey) {
+      try {
+        const { upsertCandidatesToSupabase, deleteCandidateFromSupabase } = await import('./supabase.js');
+        
+        // Handle deletion: find if any candidate was removed
+        if (resolvedLeads.length < masterLeads.length) {
+          const resolvedUrls = new Set(resolvedLeads.map(l => l.linkedinUrl || l.url));
+          const removedCandidates = masterLeads.filter(l => !resolvedUrls.has(l.linkedinUrl || l.url));
+          for (const cand of removedCandidates) {
+            await deleteCandidateFromSupabase(supabaseUrl, supabaseKey, cand).catch(e => console.error(e));
+          }
+        }
+        
+        // Upsert active leads
+        if (resolvedLeads.length > 0) {
+          await upsertCandidatesToSupabase(supabaseUrl, supabaseKey, resolvedLeads);
+        }
+      } catch (err) {
+        console.error("Failed to sync updates to Supabase:", err);
+        setDbStatus('error');
+      }
+    }
+  };
+
+  // Connect & migrate local storage to online shared database
+  const handleConnectSupabase = async (e) => {
+    e.preventDefault();
+    if (inputUseSupabase && (!inputUrl.trim() || !inputKey.trim())) {
+      alert("Please enter a valid Supabase URL and API Key.");
+      return;
+    }
+
+    setDbStatus('connecting');
+    try {
+      if (inputUseSupabase) {
+        const { fetchCandidatesFromSupabase, upsertCandidatesToSupabase } = await import('./supabase.js');
+        
+        // 1. Fetch remote candidates
+        const remoteCandidates = await fetchCandidatesFromSupabase(inputUrl, inputKey);
+        
+        // 2. Perform two-way merge
+        const mergedMap = new Map();
+        
+        // Place local leads first
+        masterLeads.forEach(c => {
+          const u = (c.linkedinUrl || c.url || '').split('?')[0].toLowerCase().trim();
+          if (u) mergedMap.set(u, c);
+        });
+        
+        // Merge in remote leads, keeping newer metrics
+        remoteCandidates.forEach(c => {
+          const u = (c.linkedinUrl || c.url || '').split('?')[0].toLowerCase().trim();
+          if (u) {
+            const local = mergedMap.get(u);
+            if (local) {
+              mergedMap.set(u, {
+                ...local,
+                ...c,
+                matchScore: Math.max(local.matchScore || 0, c.matchScore || 0),
+                status: c.status || local.status || 'sourced'
+              });
+            } else {
+              mergedMap.set(u, c);
+            }
+          }
+        });
+
+        const mergedLeads = Array.from(mergedMap.values());
+        
+        // 3. Push complete dataset back to Supabase
+        if (mergedLeads.length > 0) {
+          await upsertCandidatesToSupabase(inputUrl, inputKey, mergedLeads);
+        }
+
+        // 4. Update state and config
+        setMasterLeads(mergedLeads);
+        localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(mergedLeads));
+        
+        localStorage.setItem('siliconPatternsDbMode', 'supabase');
+        localStorage.setItem('siliconPatternsSupabaseUrl', inputUrl);
+        localStorage.setItem('siliconPatternsSupabaseKey', inputKey);
+        
+        setUseSupabase(true);
+        setSupabaseUrl(inputUrl);
+        setSupabaseKey(inputKey);
+        setDbStatus('connected');
+        alert("Connected and synced successfully! You are now working on a shared database.");
+      } else {
+        // Disabling Supabase, fallback to local storage mode
+        localStorage.setItem('siliconPatternsDbMode', 'local');
+        setUseSupabase(false);
+        setDbStatus('local');
+        alert("Database connection deactivated. Switched back to Local Browser Storage.");
+      }
+      setShowSettings(false);
+    } catch (err) {
+      console.error(err);
+      setDbStatus('error');
+      alert(`Database connection failed:\n${err.message}`);
+    }
+  };
+
+  const sqlCode = `create table candidates (
+  linkedin_url text primary key,
+  first_name text,
+  last_name text,
+  headline text,
+  current_title text,
+  location text,
+  match_score integer,
+  status text default 'sourced',
+  agent_score integer,
+  agent_reasoning text,
+  profile_data jsonb,
+  created_at timestamptz default now()
+);
+
+-- Disable row-level security so anyone can read/write without login
+alter table candidates disable row level security;`;
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f4f4f5', fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#18181b' }}>
-      <Nav candidateCount={masterLeads.length} />
+      <Nav candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} />
+      
       <Routes>
-        <Route path="/" element={<SearchPage masterLeads={masterLeads} setMasterLeads={setMasterLeads} />} />
-        <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={setMasterLeads} />} />
+        <Route path="/" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+        <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+        <Route path="/agent" element={<AIAgentPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+        <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
       </Routes>
+
+      {/* Settings Modal Dialog */}
+      {showSettings && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', padding: '20px',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: '#fff', borderRadius: '12px', maxWidth: '560px', width: '100%',
+            maxHeight: '90vh', overflowY: 'auto', padding: '28px', border: '1px solid #e4e4e7',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e4e4e7', paddingBottom: '14px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#18181b' }}>
+                ⚙️ Workspace Settings
+              </h3>
+              <button 
+                onClick={() => setShowSettings(false)}
+                style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#a1a1aa' }}
+              >×</button>
+            </div>
+
+            {/* Modal Body: Connection Settings */}
+            <form onSubmit={handleConnectSupabase} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <input
+                    type="checkbox"
+                    id="enableDb"
+                    checked={inputUseSupabase}
+                    onChange={e => setInputUseSupabase(e.target.checked)}
+                    style={{ width: '16px', height: '16px', accentColor: '#18181b', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="enableDb" style={{ fontSize: '13px', fontWeight: '600', color: '#18181b', cursor: 'pointer', userSelect: 'none' }}>
+                    Connect Shared Supabase Database (No Login Required)
+                  </label>
+                </div>
+                <p style={{ margin: 0, fontSize: '12px', color: '#71717a', lineHeight: '1.4' }}>
+                  Enabling this connects your recruiter database to a shared online cloud database. Multiple recruiters can share and updates will automatically sync across devices.
+                </p>
+              </div>
+
+              {inputUseSupabase && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+                      Supabase Project URL
+                    </label>
+                    <input
+                      type="text"
+                      value={inputUrl}
+                      onChange={e => setInputUrl(e.target.value)}
+                      placeholder="https://your-project-id.supabase.co"
+                      required={inputUseSupabase}
+                      style={{
+                        width: '100%', padding: '8px 12px', boxSizing: 'border-box',
+                        borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+                      Supabase Public Anon API Key
+                    </label>
+                    <input
+                      type="password"
+                      value={inputKey}
+                      onChange={e => setInputKey(e.target.value)}
+                      placeholder="eyJhbGciOi..."
+                      required={inputUseSupabase}
+                      style={{
+                        width: '100%', padding: '8px 12px', boxSizing: 'border-box',
+                        borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px'
+                      }}
+                    />
+                  </div>
+
+                  {/* SQL Schema Instruction Dropdown */}
+                  <div style={{ marginTop: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowSqlHelp(!showSqlHelp)}
+                      style={{
+                        background: 'none', border: 'none', padding: 0, color: '#2563eb',
+                        fontSize: '11px', fontWeight: '600', cursor: 'pointer', textDecoration: 'underline'
+                      }}
+                    >
+                      {showSqlHelp ? 'Hide SQL Table Setup Instructions' : 'View SQL Table Setup Instructions'}
+                    </button>
+                    
+                    {showSqlHelp && (
+                      <div style={{ marginTop: '8px' }}>
+                        <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#475569', lineHeight: '1.4' }}>
+                          Paste this code into the <strong>SQL Editor</strong> tab inside your Supabase project dashboard to create the candidate table with disabled RLS:
+                        </p>
+                        <pre style={{
+                          margin: 0, padding: '10px', backgroundColor: '#1e293b', color: '#f8fafc',
+                          borderRadius: '6px', fontSize: '10px', overflowX: 'auto', fontFamily: 'monospace',
+                          lineHeight: '1.4'
+                        }}>
+                          {sqlCode}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #e4e4e7', paddingTop: '16px', marginTop: '8px' }}>
+                <button 
+                  type="button"
+                  onClick={() => setShowSettings(false)}
+                  style={{
+                    padding: '8px 16px', backgroundColor: '#f4f4f5', color: '#18181b',
+                    border: '1px solid #e4e4e7', borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '12px', fontWeight: '600'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  style={{
+                    padding: '8px 16px', backgroundColor: '#18181b', color: '#fff',
+                    border: 'none', borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '12px', fontWeight: '600'
+                  }}
+                >
+                  Save & Sync Configuration
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

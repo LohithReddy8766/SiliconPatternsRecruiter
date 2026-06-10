@@ -1,5 +1,15 @@
 import React, { useState, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
+
+const STAGE_BADGES = {
+  sourced: { label: 'Sourced', bg: '#f3f4f6', text: '#374151', border: '#e5e7eb' },
+  reached_out: { label: 'Reached Out', bg: '#eff6ff', text: '#1e40af', border: '#bfdbfe' },
+  interviewing: { label: 'Interviewing', bg: '#fef3c7', text: '#92400e', border: '#fde68a' },
+  offer: { label: 'Offer Extended', bg: '#faf5ff', text: '#6b21a8', border: '#e9d5ff' },
+  hired: { label: 'Hired', bg: '#dcfce7', text: '#166534', border: '#bbf7d0' },
+  rejected: { label: 'Rejected', bg: '#fef2f2', text: '#991b1b', border: '#fecaca' }
+};
 
 function safeExtractText(field) {
   if (field === null || field === undefined) return 'N/A';
@@ -30,8 +40,8 @@ function getScoreColor(score) {
   return { bg: '#f4f4f5', text: '#52525b', border: '#e4e4e7' };
 }
 
-function CandidateCard({ profile, onRemove }) {
-  const [expanded, setExpanded] = useState(false);
+function CandidateCard({ profile, onRemove, isHighlighted }) {
+  const [expanded, setExpanded] = useState(isHighlighted || false);
   const name = `${safeExtractText(profile.firstName)} ${safeExtractText(profile.lastName)}`.trim();
   const title = safeExtractText(profile.currentTitle || profile.jobTitle || profile.headline);
   const location = safeExtractText(profile.location).split(',')[0];
@@ -56,8 +66,8 @@ function CandidateCard({ profile, onRemove }) {
 
   return (
     <div style={{
-      backgroundColor: '#fff',
-      border: '1px solid #e4e4e7',
+      backgroundColor: isHighlighted ? '#f8fafc' : '#fff',
+      border: isHighlighted ? '2px solid #3b82f6' : '1px solid #e4e4e7',
       borderRadius: '10px',
       overflow: 'hidden',
       transition: 'box-shadow 0.15s ease',
@@ -81,6 +91,17 @@ function CandidateCard({ profile, onRemove }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '15px', fontWeight: '700', color: '#18181b' }}>{name}</span>
+                <span style={{ 
+                  fontSize: '10px', 
+                  fontWeight: '600', 
+                  backgroundColor: STAGE_BADGES[profile.status || 'sourced'].bg, 
+                  color: STAGE_BADGES[profile.status || 'sourced'].text, 
+                  border: `1px solid ${STAGE_BADGES[profile.status || 'sourced'].border}`,
+                  padding: '2px 7px', 
+                  borderRadius: '10px' 
+                }}>
+                  {STAGE_BADGES[profile.status || 'sourced'].label}
+                </span>
                 {(safeExtractText(profile.headline) + ' ' + title).toLowerCase().includes('open to work') && (
                   <span style={{ fontSize: '10px', fontWeight: '600', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 7px', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
                     OPEN TO WORK
@@ -101,8 +122,10 @@ function CandidateCard({ profile, onRemove }) {
               border: `1px solid ${scoreColors.border}`,
               borderRadius: '6px', padding: '4px 10px',
               fontSize: '13px', fontWeight: '800', letterSpacing: '-0.02em',
-            }}>
-              {profile.matchScore}
+              display: 'flex', alignItems: 'center', gap: '4px'
+            }} title={profile.agentScore ? "AI Agent Screened Score" : "Heuristic Score"}>
+              {profile.agentScore && <span style={{ fontSize: '12px' }}>🤖</span>}
+              <span>{profile.matchScore}</span>
             </div>
             {url && url !== 'N/A' && (
               <a href={url} target="_blank" rel="noopener noreferrer" style={{
@@ -180,6 +203,12 @@ function CandidateCard({ profile, onRemove }) {
               <p style={{ margin: 0, fontSize: '13px', color: '#3f3f46', lineHeight: 1.6 }}>{education}</p>
             </div>
           )}
+          {profile.agentReasoning && (
+            <div style={{ borderLeft: '3px solid #c084fc', paddingLeft: '10px', margin: '8px 0', backgroundColor: 'rgba(192, 132, 252, 0.08)', padding: '10px', borderRadius: '6px' }}>
+              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🤖 AI Agent Reasoning</p>
+              <p style={{ margin: 0, fontSize: '13px', color: '#6b21a8', lineHeight: 1.6 }}>{profile.agentReasoning}</p>
+            </div>
+          )}
           {profile._searchedSkills && (
             <div>
               <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Searched With</p>
@@ -193,6 +222,9 @@ function CandidateCard({ profile, onRemove }) {
 }
 
 export default function CandidatesPage({ masterLeads, setMasterLeads }) {
+  const location = useLocation();
+  const highlightedUrl = location.state?.highlightCandidateUrl || '';
+
   // Filter state
   const [searchText, setSearchText] = useState('');
   const [filterSkills, setFilterSkills] = useState([]);
@@ -360,7 +392,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   }
 
   return (
-    <div style={{ padding: '28px 20px', maxWidth: '1100px', margin: '0 auto' }}>
+    <div style={{ padding: '28px 20px', maxWidth: '1400px', margin: '0 auto' }}>
 
       {/* Page Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
@@ -511,7 +543,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       ) : viewMode === 'list' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {filteredCandidates.map((p, idx) => (
-            <CandidateCard key={idx} profile={p} onRemove={removeCandidate} />
+            <CandidateCard key={idx} profile={p} onRemove={removeCandidate} isHighlighted={highlightedUrl === (p.linkedinUrl || p.url)} />
           ))}
         </div>
       ) : (
@@ -534,7 +566,22 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: '0 0 2px', fontSize: '14px', fontWeight: '700', color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                      <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{name}</p>
+                      <span style={{ 
+                        fontSize: '9px', 
+                        fontWeight: '600', 
+                        backgroundColor: STAGE_BADGES[p.status || 'sourced'].bg, 
+                        color: STAGE_BADGES[p.status || 'sourced'].text, 
+                        border: `1px solid ${STAGE_BADGES[p.status || 'sourced'].border}`,
+                        padding: '1px 5px', 
+                        borderRadius: '10px',
+                        display: 'inline-block',
+                        lineHeight: '1.2'
+                      }}>
+                        {STAGE_BADGES[p.status || 'sourced'].label}
+                      </span>
+                    </div>
                     <p style={{ margin: 0, fontSize: '12px', color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title.substring(0, 50)}</p>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', marginLeft: '8px', flexShrink: 0 }}>
