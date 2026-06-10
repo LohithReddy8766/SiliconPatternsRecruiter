@@ -1,37 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import CandidatesPage from './CandidatesPage.jsx';
+import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
 
 const API_TOKEN = import.meta.env.VITE_APIFY_API_TOKEN || 'YOUR_API_TOKEN_HERE';
 const ACTOR_NAME = 'harvestapi~linkedin-profile-search';
-
-const ASIC_SKILLS = [
-  "UVM", "SystemVerilog", "Verilog", "VHDL", "Formal",
-  "DFT", "Scan", "BIST", "MBIST", "JTAG", "IEEE 1500", "IEEE 1687",
-  "ZeBu", "Palladium", "Veloce", "UPF", "CPF",
-  "Floorplanning", "CTS", "Routing", "ECO", "STA", "DRC/LVS", "IR/EM",
-  "Power Signoff", "OPC", "Thermal Analysis", "Aging/BTI", "Noise Analysis",
-  "2.5D Integration", "Multi-Vt Optimization",
-  "PCIe", "PCIe Gen3", "PCIe Gen4", "PCIe Gen5", "PCIe Gen6",
-  "CXL", "CXL 1.1", "CXL 2.0", "CXL 3.0",
-  "USB", "USB 2.0", "USB 3.0", "USB4",
-  "Ethernet", "Ethernet 1G", "Ethernet 10G", "Ethernet 400G",
-  "SerDes", "SerDes 28G", "SerDes 112G",
-  "SATA", "SATA 3.0", "MIPI", "MIPI CSI-2", "MIPI D-PHY",
-  "UFS", "UFS 3.1", "HDMI", "HDMI 2.1", "DisplayPort",
-  "SDIO", "SPI", "I2C", "NVMe", "UART", "SAS", "Fibre Channel",
-  "Wi-Fi", "Bluetooth LE",
-  "DDR", "DDR2", "DDR3", "DDR4", "DDR5", "LPDDR", "LPDDR3", "LPDDR4", "LPDDR5",
-  "GDDR", "GDDR5", "GDDR6", "GDDR6X", "HBM", "HBM2", "HBM2E", "HBM3",
-  "NAND", "NOR", "eMMC", "NVDIMM", "CXL.mem", "MRAM", "ReRAM", "FRAM",
-  "Optane", "3D XPoint", "WideIO", "SDRAM",
-  "VCS", "PrimeTime", "Innovus", "Xcelium", "Calibre", "TCL", "Python",
-  "Design Compiler", "SystemC", "ICC2", "HSPICE", "Genus", "Virtuoso",
-  "Spectre", "Tessent", "QuestaSim", "RedHawk", "ADS", "Chisel", "TensorFlow",
-  "CAN", "CAN-FD", "FlexRay", "LIN", "AUTOSAR", "AUTOSAR Classic", "AUTOSAR Adaptive",
-  "ISO26262", "ASIL", "ASIL A", "ASIL B", "ASIL C", "ASIL D", "Automotive Ethernet",
-  "UDS", "HSM", "SHE", "TPM", "OBD-II", "CHAdeMO", "C", "C++"
-];
 
 function safeExtractText(field) {
   if (field === null || field === undefined) return 'N/A';
@@ -148,8 +121,10 @@ function SearchPage({ masterLeads, setMasterLeads }) {
   const [latestRunResults, setLatestRunResults] = useState([]);
   const [skillFilter, setSkillFilter] = useState('');
   const [customSkill, setCustomSkill] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
 
-  const filteredSkills = ASIC_SKILLS.filter(s => s.toLowerCase().includes(skillFilter.toLowerCase()));
+  const availableSkills = selectedCategory === 'All' ? ASIC_SKILLS : ASIC_SKILLS_CATEGORIZED[selectedCategory];
+  const filteredSkills = availableSkills.filter(s => s.toLowerCase().includes(skillFilter.toLowerCase()));
 
   const handleAddCustomSkill = () => {
     if (customSkill.trim() && !selectedSkills.includes(customSkill.trim())) {
@@ -299,10 +274,14 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           <div>
             <label style={labelStyle}>Core Competency Matrix</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) minmax(140px, 1fr) minmax(160px, auto)', gap: '12px', marginBottom: '12px' }}>
+              <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={inputStyle}>
+                <option value="All">All Categories</option>
+                {Object.keys(ASIC_SKILLS_CATEGORIZED).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
               <input
                 type="text"
-                placeholder="Search master skills..."
+                placeholder="Search category skills..."
                 value={skillFilter}
                 onChange={e => setSkillFilter(e.target.value)}
                 style={inputStyle}
@@ -310,7 +289,7 @@ function SearchPage({ masterLeads, setMasterLeads }) {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                   type="text"
-                  placeholder="Add custom skill..."
+                  placeholder="Custom skill..."
                   value={customSkill}
                   onChange={e => setCustomSkill(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' ? (e.preventDefault(), handleAddCustomSkill()) : null}

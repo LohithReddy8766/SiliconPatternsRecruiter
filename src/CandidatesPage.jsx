@@ -1,32 +1,5 @@
 import React, { useState, useMemo } from 'react';
-
-const ASIC_SKILLS = [
-  "UVM", "SystemVerilog", "Verilog", "VHDL", "Formal",
-  "DFT", "Scan", "BIST", "MBIST", "JTAG", "IEEE 1500", "IEEE 1687",
-  "ZeBu", "Palladium", "Veloce", "UPF", "CPF",
-  "Floorplanning", "CTS", "Routing", "ECO", "STA", "DRC/LVS", "IR/EM",
-  "Power Signoff", "OPC", "Thermal Analysis", "Aging/BTI", "Noise Analysis",
-  "2.5D Integration", "Multi-Vt Optimization",
-  "PCIe", "PCIe Gen3", "PCIe Gen4", "PCIe Gen5", "PCIe Gen6",
-  "CXL", "CXL 1.1", "CXL 2.0", "CXL 3.0",
-  "USB", "USB 2.0", "USB 3.0", "USB4",
-  "Ethernet", "Ethernet 1G", "Ethernet 10G", "Ethernet 400G",
-  "SerDes", "SerDes 28G", "SerDes 112G",
-  "SATA", "SATA 3.0", "MIPI", "MIPI CSI-2", "MIPI D-PHY",
-  "UFS", "UFS 3.1", "HDMI", "HDMI 2.1", "DisplayPort",
-  "SDIO", "SPI", "I2C", "NVMe", "UART", "SAS", "Fibre Channel",
-  "Wi-Fi", "Bluetooth LE",
-  "DDR", "DDR2", "DDR3", "DDR4", "DDR5", "LPDDR", "LPDDR3", "LPDDR4", "LPDDR5",
-  "GDDR", "GDDR5", "GDDR6", "GDDR6X", "HBM", "HBM2", "HBM2E", "HBM3",
-  "NAND", "NOR", "eMMC", "NVDIMM", "CXL.mem", "MRAM", "ReRAM", "FRAM",
-  "Optane", "3D XPoint", "WideIO", "SDRAM",
-  "VCS", "PrimeTime", "Innovus", "Xcelium", "Calibre", "TCL", "Python",
-  "Design Compiler", "SystemC", "ICC2", "HSPICE", "Genus", "Virtuoso",
-  "Spectre", "Tessent", "QuestaSim", "RedHawk", "ADS", "Chisel", "TensorFlow",
-  "CAN", "CAN-FD", "FlexRay", "LIN", "AUTOSAR", "AUTOSAR Classic", "AUTOSAR Adaptive",
-  "ISO26262", "ASIL", "ASIL A", "ASIL B", "ASIL C", "ASIL D", "Automotive Ethernet",
-  "UDS", "HSM", "SHE", "TPM", "OBD-II", "CHAdeMO", "C", "C++"
-];
+import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
 
 function safeExtractText(field) {
   if (field === null || field === undefined) return 'N/A';
@@ -224,8 +197,10 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   const [searchText, setSearchText] = useState('');
   const [filterSkills, setFilterSkills] = useState([]);
   const [skillFilterInput, setSkillFilterInput] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   
-  const filteredMasterSkills = ASIC_SKILLS.filter(s => s.toLowerCase().includes(skillFilterInput.toLowerCase()));
+  const availableMasterSkills = selectedCategory === 'All' ? ASIC_SKILLS : ASIC_SKILLS_CATEGORIZED[selectedCategory];
+  const filteredMasterSkills = availableMasterSkills.filter(s => s.toLowerCase().includes(skillFilterInput.toLowerCase()));
   const [filterMinScore, setFilterMinScore] = useState(0);
   const [filterLocation, setFilterLocation] = useState('');
   const [filterOpenToWork, setFilterOpenToWork] = useState(false);
@@ -364,6 +339,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
     setFilterLocation('');
     setFilterOpenToWork(false);
     setSkillFilterInput('');
+    setSelectedCategory('All');
   };
 
   const inputStyle = {
@@ -474,13 +450,19 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
             <p style={{ margin: 0, fontSize: '11px', fontWeight: '600', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Filter by Skill (must have all selected)</p>
           </div>
-          <input
-            type="text"
-            placeholder="Search skills to filter..."
-            value={skillFilterInput}
-            onChange={e => setSkillFilterInput(e.target.value)}
-            style={{ ...inputStyle, marginBottom: '12px', maxWidth: '300px' }}
-          />
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={{ ...inputStyle, width: '200px' }}>
+              <option value="All">All Categories</option>
+              {Object.keys(ASIC_SKILLS_CATEGORIZED).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <input
+              type="text"
+              placeholder="Search category skills..."
+              value={skillFilterInput}
+              onChange={e => setSkillFilterInput(e.target.value)}
+              style={{ ...inputStyle, flex: 1, maxWidth: '300px' }}
+            />
+          </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '150px', overflowY: 'auto', padding: '10px', backgroundColor: '#fafafa', border: '1px solid #e4e4e7', borderRadius: '6px' }}>
             {filterSkills.map(skill => (
                 <button key={skill} onClick={() => toggleFilterSkill(skill)} style={{
