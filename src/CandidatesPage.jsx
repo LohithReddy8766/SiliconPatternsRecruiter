@@ -174,12 +174,12 @@ Generate the JSON outreach sequence now.`
     <div style={{
       backgroundColor: isHighlighted ? 'var(--bg-surface-hover)' : 'var(--bg-surface)',
       border: isHighlighted ? '2px solid var(--accent)' : '1px solid var(--border-color)',
-      borderRadius: '10px',
+      borderRadius: '8px',
       overflow: 'hidden',
-      transition: 'box-shadow 0.15s ease',
+      transition: 'border-color 0.15s ease',
     }}
-      onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)'}
-      onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-hover)'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = isHighlighted ? 'var(--accent)' : 'var(--border-color)'}
     >
       {/* Card Header */}
       <div style={{ padding: '16px 20px' }}>
@@ -188,9 +188,9 @@ Generate the JSON outreach sequence now.`
           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
             <div style={{
               width: '40px', height: '40px', flexShrink: 0,
-              backgroundColor: 'var(--accent)', borderRadius: '50%',
+              backgroundColor: 'var(--bg-main)', borderRadius: '50%', border: '1px solid var(--border-color)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#000', fontWeight: '700', fontSize: '14px',
+              color: 'var(--text-primary)', fontWeight: '600', fontSize: '14px',
             }}>
               {(safeExtractText(profile.firstName)[0] || '?').toUpperCase()}
             </div>
@@ -227,7 +227,7 @@ Generate the JSON outreach sequence now.`
               backgroundColor: scoreColors.bg, color: scoreColors.text,
               border: `1px solid ${scoreColors.border}`,
               borderRadius: '6px', padding: '4px 10px',
-              fontSize: '13px', fontWeight: '800', letterSpacing: '-0.02em',
+              fontSize: '13px', fontWeight: '600', letterSpacing: '-0.02em',
               display: 'flex', alignItems: 'center', gap: '4px'
             }} title={profile.agentScore ? "AI Agent Screened Score" : "Heuristic Score"}>
               {profile.agentScore && <span style={{ fontSize: '12px' }}>🤖</span>}
@@ -237,8 +237,8 @@ Generate the JSON outreach sequence now.`
               <a href={url} target="_blank" rel="noopener noreferrer" style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '30px', height: '30px',
-                backgroundColor: 'rgba(0, 229, 255, 0.1)', borderRadius: '6px', border: '1px solid rgba(0, 229, 255, 0.3)',
-                color: 'var(--accent)', fontSize: '12px', fontWeight: '700',
+                backgroundColor: 'var(--bg-surface)', borderRadius: '6px', border: '1px solid var(--border-color)',
+                color: 'var(--text-primary)', fontSize: '12px', fontWeight: '600',
                 textDecoration: 'none', flexShrink: 0,
               }}>in</a>
             )}
@@ -274,9 +274,9 @@ Generate the JSON outreach sequence now.`
               <span key={i} style={{
                 padding: '2px 8px', borderRadius: '4px',
                 fontSize: '11px', fontWeight: '500',
-                backgroundColor: ASIC_SKILLS.includes(skill) ? 'rgba(0, 229, 255, 0.1)' : 'var(--bg-main)',
-                color: ASIC_SKILLS.includes(skill) ? 'var(--accent)' : 'var(--text-secondary)',
-                border: ASIC_SKILLS.includes(skill) ? '1px solid rgba(0, 229, 255, 0.3)' : '1px solid var(--border-color)',
+                backgroundColor: ASIC_SKILLS.includes(skill) ? 'var(--bg-surface)' : 'var(--bg-main)',
+                color: ASIC_SKILLS.includes(skill) ? 'var(--text-primary)' : 'var(--text-secondary)',
+                border: ASIC_SKILLS.includes(skill) ? '1px solid var(--border-color)' : '1px solid var(--border-color)',
               }}>{skill}</span>
             ))}
             {skills.split(', ').length > 8 && (
@@ -310,8 +310,8 @@ Generate the JSON outreach sequence now.`
             </div>
           )}
           {profile.agentReasoning && (
-            <div style={{ borderLeft: '3px solid var(--accent)', paddingLeft: '10px', margin: '8px 0', backgroundColor: 'rgba(0, 229, 255, 0.05)', padding: '10px', borderRadius: '6px' }}>
-              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🤖 AI Agent Reasoning</p>
+            <div style={{ borderLeft: '3px solid var(--border-color)', paddingLeft: '10px', margin: '8px 0', backgroundColor: 'var(--bg-surface)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '600', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🤖 AI Agent Reasoning</p>
               <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.6 }}>{profile.agentReasoning}</p>
             </div>
           )}
@@ -328,10 +328,10 @@ Generate the JSON outreach sequence now.`
               onClick={() => setShowOutreach(v => !v)}
               style={{
                 display: 'flex', alignItems: 'center', gap: '6px',
-                backgroundColor: showOutreach ? 'rgba(0, 229, 255, 0.1)' : 'var(--bg-main)',
+                backgroundColor: showOutreach ? 'var(--bg-surface)' : 'var(--bg-main)',
                 border: '1px solid var(--border-color)',
-                borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: '600',
-                color: showOutreach ? 'var(--accent)' : 'var(--text-secondary)',
+                borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                color: showOutreach ? 'var(--text-primary)' : 'var(--text-secondary)',
                 cursor: 'pointer', transition: 'all 0.15s'
               }}
             >
@@ -365,9 +365,9 @@ Generate the JSON outreach sequence now.`
                       disabled={outreachLoading}
                       style={{
                         backgroundColor: outreachLoading ? 'var(--border-color)' : 'var(--accent)',
-                        color: outreachLoading ? 'var(--text-secondary)' : '#000',
+                        color: outreachLoading ? 'var(--text-secondary)' : 'var(--accent-fg)',
                         border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '12px',
-                        fontWeight: '700', cursor: outreachLoading ? 'not-allowed' : 'pointer',
+                        fontWeight: '500', cursor: outreachLoading ? 'not-allowed' : 'pointer',
                         transition: 'all 0.15s'
                       }}
                     >
@@ -388,9 +388,9 @@ Generate the JSON outreach sequence now.`
                           onClick={() => { setActiveOutreachTab(tab.id); setCopiedTab(null); }}
                           style={{
                             border: 'none', background: 'none', padding: '6px 12px', borderRadius: '4px',
-                            fontSize: '11px', fontWeight: '600', cursor: 'pointer',
-                            color: activeOutreachTab === tab.id ? 'var(--accent)' : 'var(--text-secondary)',
-                            backgroundColor: activeOutreachTab === tab.id ? 'rgba(0, 229, 255, 0.08)' : 'transparent',
+                            fontSize: '11px', fontWeight: '500', cursor: 'pointer',
+                            color: activeOutreachTab === tab.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            backgroundColor: activeOutreachTab === tab.id ? 'var(--bg-surface-hover)' : 'transparent',
                             transition: 'all 0.15s'
                           }}
                         >
@@ -422,10 +422,10 @@ Generate the JSON outreach sequence now.`
                           setCopiedTab(activeOutreachTab);
                         }}
                         style={{
-                          backgroundColor: 'rgba(0, 229, 255, 0.1)',
-                          border: '1px solid rgba(0, 229, 255, 0.3)',
-                          color: 'var(--accent)',
-                          borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '700',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-primary)',
+                          borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '500',
                           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
                         }}
                       >
@@ -634,10 +634,10 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={downloadCSV} style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', color: '#000', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '700' }}>
+          <button onClick={downloadCSV} style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
             ⬇️ Export CSV
           </button>
-          <button onClick={clearAll} style={{ padding: '8px 12px', backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+          <button onClick={clearAll} style={{ padding: '8px 12px', backgroundColor: 'var(--bg-surface)', color: '#ef4444', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
             Clear All
           </button>
         </div>
@@ -729,7 +729,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
                 <button key={skill} onClick={() => toggleFilterSkill(skill)} style={{
                   padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
                   cursor: 'pointer', transition: 'all 0.15s',
-                  border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: '#000',
+                  border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)',
                 }}>{skill} ✕</button>
             ))}
             {filteredMasterSkills.filter(s => !filterSkills.includes(s)).map(skill => (
@@ -765,7 +765,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔍</div>
           <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>No candidates match your filters</h3>
           <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-secondary)' }}>Try loosening the filters or clearing them entirely.</p>
-          <button onClick={resetFilters} style={{ padding: '8px 20px', backgroundColor: 'var(--accent)', color: '#000', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '700' }}>
+          <button onClick={resetFilters} style={{ padding: '8px 20px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
             Reset All Filters
           </button>
         </div>
@@ -786,12 +786,12 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
             const skills = extractSkillsList(p);
             return (
               <div key={idx} style={{
-                backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)',
-                borderRadius: '10px', padding: '14px 16px',
-                transition: 'box-shadow 0.15s',
+                backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)',
+                borderRadius: '8px', padding: '14px 16px',
+                transition: 'border-color 0.15s',
               }}
-                onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)'}
-                onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
+                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-hover)'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>

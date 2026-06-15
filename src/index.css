@@ -1,29 +1,33 @@
 :root {
-  --bg-main: #060b13;
-  --bg-surface: #101724;
-  --bg-surface-hover: #1a2332;
-  --nav-bg: rgba(16, 23, 36, 0.95);
-  --accent: #00e5ff;
-  --accent-hover: #00cce6;
-  --text-primary: #ffffff;
-  --text-secondary: #94a3b8;
-  --border-color: #1e293b;
+  --bg-main: #000000;
+  --bg-surface: #0a0a0a;
+  --bg-surface-hover: #141414;
+  --nav-bg: #000000;
+  --accent: #ededed;
+  --accent-hover: #ffffff;
+  --accent-fg: #000000;
+  --text-primary: #ededed;
+  --text-secondary: #a1a1aa;
+  --border-color: #333333;
+  --border-hover: #444444;
   
   --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: 'Montserrat', system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --heading: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 :root[data-theme='light'] {
-  --bg-main: #f8fafc;
+  --bg-main: #fafafa;
   --bg-surface: #ffffff;
-  --bg-surface-hover: #f1f5f9;
-  --nav-bg: rgba(248, 250, 252, 0.95);
-  --accent: #00e5ff;
-  --accent-hover: #00cce6;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --border-color: #cbd5e1;
+  --bg-surface-hover: #f5f5f5;
+  --nav-bg: #fafafa;
+  --accent: #000000;
+  --accent-hover: #333333;
+  --accent-fg: #ffffff;
+  --text-primary: #111111;
+  --text-secondary: #666666;
+  --border-color: #eaeaea;
+  --border-hover: #cccccc;
 }
 
 body {
@@ -47,9 +51,10 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--heading);
   color: var(--text-primary);
   margin: 0;
+  letter-spacing: -0.02em;
 }
 
-/* Custom Scrollbar for dark theme */
+/* Custom Scrollbar for modern theme */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -68,7 +73,7 @@ h1, h2, h3, h4, h5, h6 {
 /* Select element styling reset */
 select {
   appearance: none;
-  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
   background-repeat: no-repeat;
   background-position: right 12px center;
   background-size: 16px;

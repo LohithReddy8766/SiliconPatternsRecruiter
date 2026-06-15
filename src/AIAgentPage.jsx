@@ -264,16 +264,15 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
             style={{ 
               padding: '10px 20px', 
               backgroundColor: 'var(--accent)', 
-              color: '#000', 
+              color: 'var(--accent-fg)', 
               border: 'none', 
               borderRadius: '6px', 
               cursor: 'pointer', 
               fontSize: '13px', 
-              fontWeight: '700',
-              boxShadow: '0 4px 12px rgba(0, 229, 255, 0.2)',
+              fontWeight: '500',
               transition: 'all 0.2s'
             }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#00cce6'}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
             onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--accent)'}
           >
             💾 Commit Scores to Database
@@ -292,7 +291,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
           {/* Card 1: Configuration */}
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+          <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>⚙️ Model Setup</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
@@ -318,8 +317,8 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                 <button 
                   onClick={handleSaveConfig}
                   style={{
-                    padding: '10px 16px', backgroundColor: 'var(--accent)', color: '#000', border: 'none',
-                    borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '700'
+                    padding: '10px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)',
+                    borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
                   }}
                 >
                   Save Config
@@ -329,7 +328,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
           </div>
 
           {/* Card 2: Screening Target */}
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+          <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>🎯 Screening Requirements</h2>
               <div style={{ display: 'flex', gap: '6px' }}>
@@ -353,7 +352,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
           </div>
 
           {/* Card 3: Candidate Pool Selection */}
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+          <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
                 <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>👥 Candidate Pool</h2>
@@ -429,11 +428,10 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                 disabled={isRunning || selectedCandidateIds.length === 0}
                 style={{
                   width: '100%', marginBottom: '16px', padding: '12px',
-                  backgroundColor: isRunning ? 'var(--bg-main)' : selectedCandidateIds.length === 0 ? 'var(--bg-main)' : 'var(--accent)',
-                  color: selectedCandidateIds.length === 0 && !isRunning ? 'var(--text-secondary)' : '#000',
-                  border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '13px', fontWeight: '700',
+                  backgroundColor: isRunning ? 'var(--border-color)' : selectedCandidateIds.length === 0 ? 'var(--bg-surface)' : 'var(--accent)',
+                  color: selectedCandidateIds.length === 0 && !isRunning ? 'var(--text-secondary)' : 'var(--accent-fg)',
+                  border: selectedCandidateIds.length === 0 ? '1px solid var(--border-color)' : 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '500',
                   cursor: isRunning || selectedCandidateIds.length === 0 ? 'not-allowed' : 'pointer',
-                  boxShadow: isRunning ? 'none' : '0 4px 10px rgba(0,0,0,0.5)',
                   transition: 'background-color 0.2s'
                 }}
               >
@@ -475,7 +473,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                           checked={isSelected}
                           disabled={isRunning}
                           onChange={() => {}} // handled by div onClick
-                          style={{ accentColor: 'var(--accent)', cursor: isRunning ? 'not-allowed' : 'pointer' }}
+                          style={{ cursor: isRunning ? 'not-allowed' : 'pointer' }}
                         />
                         <div style={{ minWidth: 0 }}>
                           <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>
@@ -491,10 +489,10 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                         {isCurrent && <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: '700', animation: 'pulse 1.5s infinite' }}>🤖 THINKING</span>}
                         {result && (
                           <span style={{
-                            fontSize: '11px', fontWeight: '800',
-                            backgroundColor: result.score >= 70 ? 'rgba(22, 163, 74, 0.15)' : result.score >= 40 ? 'rgba(217, 119, 6, 0.15)' : 'var(--bg-surface)',
-                            color: result.score >= 70 ? '#4ade80' : result.score >= 40 ? '#fbbf24' : 'var(--text-secondary)',
-                            border: `1px solid ${result.score >= 70 ? 'rgba(74, 222, 128, 0.3)' : result.score >= 40 ? 'rgba(251, 191, 36, 0.3)' : 'var(--border-color)'}`,
+                            fontSize: '11px', fontWeight: '600',
+                            backgroundColor: 'var(--bg-main)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
                             padding: '2px 6px', borderRadius: '4px'
                           }}>
                             {result.score}/100
@@ -514,20 +512,20 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
           {/* Card 4: Agent Terminal (Logs) */}
-          <div style={{ backgroundColor: 'var(--bg-main)', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '340px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
+          <div style={{ backgroundColor: '#000000', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '340px', overflow: 'hidden' }}>
             {/* Terminal Top bar */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #333333', backgroundColor: '#111111' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444' }} />
                 <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
                 <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                <span style={{ color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'monospace', fontWeight: '600', marginLeft: '8px' }}>agent@silicon-patterns-screener:~</span>
+                <span style={{ color: '#a1a1aa', fontSize: '11px', fontFamily: 'monospace', fontWeight: '600', marginLeft: '8px' }}>agent@silicon-patterns-screener:~</span>
               </div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>REACT ENGINE ACTIVE</span>
+              <span style={{ fontSize: '10px', color: '#a1a1aa', fontFamily: 'monospace' }}>REACT ENGINE ACTIVE</span>
             </div>
 
             {/* Terminal Body */}
-            <div style={{ flex: 1, padding: '14px 18px', overflowY: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '12px', lineHeight: '1.6', color: 'var(--text-primary)', backgroundColor: '#0d0e12' }}>
+            <div style={{ flex: 1, padding: '14px 18px', overflowY: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '12px', lineHeight: '1.6', color: '#ededed', backgroundColor: '#000000' }}>
               {agentLogs.length === 0 ? (
                 <div style={{ color: 'var(--text-secondary)', textAlign: 'center', paddingTop: '100px' }}>
                   &gt; Launch the agent to monitor live reasoning, decision planning, and local tool execution logs in this terminal.
@@ -558,7 +556,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
           </div>
 
           {/* Card 5: Screening Results & Scorecards */}
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+          <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>📊 Screening Results</h2>
 
             {Object.keys(agentResults).length === 0 ? (
@@ -585,10 +583,10 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                         <span style={{
-                          fontSize: '12px', fontWeight: '800',
-                          backgroundColor: result.score >= 70 ? 'rgba(22, 163, 74, 0.15)' : result.score >= 40 ? 'rgba(217, 119, 6, 0.15)' : 'var(--bg-main)',
-                          color: result.score >= 70 ? '#4ade80' : result.score >= 40 ? '#fbbf24' : 'var(--text-secondary)',
-                          border: `1px solid ${result.score >= 70 ? 'rgba(74, 222, 128, 0.3)' : result.score >= 40 ? 'rgba(251, 191, 36, 0.3)' : 'var(--border-color)'}`,
+                          fontSize: '12px', fontWeight: '600',
+                          backgroundColor: 'var(--bg-surface)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--border-color)',
                           padding: '4px 8px', borderRadius: '5px'
                         }}>
                           {result.score}
@@ -636,10 +634,10 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                 </p>
               </div>
               <span style={{
-                fontSize: '14px', fontWeight: '800',
-                backgroundColor: viewingReasoning.result.score >= 70 ? 'rgba(22, 163, 74, 0.15)' : viewingReasoning.result.score >= 40 ? 'rgba(217, 119, 6, 0.15)' : 'var(--bg-main)',
-                color: viewingReasoning.result.score >= 70 ? '#4ade80' : viewingReasoning.result.score >= 40 ? '#fbbf24' : 'var(--text-secondary)',
-                border: `1px solid ${viewingReasoning.result.score >= 70 ? 'rgba(74, 222, 128, 0.3)' : viewingReasoning.result.score >= 40 ? 'rgba(251, 191, 36, 0.3)' : 'var(--border-color)'}`,
+                fontSize: '14px', fontWeight: '600',
+                backgroundColor: 'var(--bg-main)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
                 padding: '6px 12px', borderRadius: '6px'
               }}>{viewingReasoning.result.score}/100</span>
             </div>
@@ -652,13 +650,13 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button 
-                onClick={() => setViewingReasoning(null)} 
-                style={{
-                  padding: '8px 20px', backgroundColor: 'var(--accent)', color: '#000', border: 'none',
-                  borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer'
-                }}
-              >
+                <button 
+                  onClick={() => setViewingReasoning(null)} 
+                  style={{
+                    padding: '8px 20px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)',
+                    borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
+                  }}
+                >
                 Close
               </button>
             </div>

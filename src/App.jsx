@@ -82,7 +82,7 @@ function calculateCandidateScore(profile, selectedSkills, targetLocation, target
   return Math.min(Math.round(score), 100);
 }
 
-function Nav({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme }) {
+function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme }) {
   const navigate = useNavigate();
   const location = useLocation();
   const isSearch = location.pathname === '/';
@@ -92,13 +92,13 @@ function Nav({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme }) {
   const getDbBadge = () => {
     switch (dbStatus) {
       case 'connected':
-        return { label: 'Shared DB', bg: '#dcfce7', color: '#166534', border: '#bbf7d0' };
+        return { label: 'Shared DB', bg: 'var(--bg-main)', color: '#ededed', border: 'var(--border-color)', dot: '#ededed' };
       case 'connecting':
-        return { label: 'Syncing...', bg: '#fef9c3', color: '#854d0e', border: '#fef08a' };
+        return { label: 'Syncing...', bg: 'var(--bg-main)', color: '#a1a1aa', border: 'var(--border-color)', dot: '#f5a623' };
       case 'error':
-        return { label: 'DB Error', bg: '#fee2e2', color: '#991b1b', border: '#fecaca' };
+        return { label: 'DB Error', bg: 'var(--bg-main)', color: '#ff0000', border: 'var(--border-color)', dot: '#ff0000' };
       default:
-        return { label: 'Local Browser', bg: '#f3f4f6', color: '#374151', border: '#e5e7eb' };
+        return { label: 'Local', bg: 'var(--bg-main)', color: 'var(--text-secondary)', border: 'var(--border-color)', dot: 'var(--text-secondary)' };
     }
   };
 
@@ -106,92 +106,94 @@ function Nav({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme }) {
 
   return (
     <nav style={{
-      position: 'sticky', top: 0, zIndex: 100,
-      backgroundColor: 'var(--nav-bg)',
-      backdropFilter: 'blur(12px)',
-      borderBottom: '1px solid var(--border-color)',
-      padding: '0 32px',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      height: '56px',
+      width: '240px',
+      height: '100vh',
+      position: 'sticky', top: 0,
+      backgroundColor: 'var(--bg-main)',
+      borderRight: '1px solid var(--border-color)',
+      display: 'flex', flexDirection: 'column',
+      padding: '24px 16px',
+      boxSizing: 'border-box'
     }}>
-      {/* Left side */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <img src={logo} alt="Silicon Patterns" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
-          <span style={{ fontWeight: '700', fontSize: '15px', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-            Silicon Patterns
-          </span>
-        </div>
-        
-        {/* Navigation Buttons (Moved to the left) */}
-        <div style={{ display: 'flex', gap: '4px' }}>
-          {[
-            { label: 'Search', path: '/', active: isSearch },
-            { label: candidateCount > 0 ? `Candidates (${candidateCount})` : 'Candidates', path: '/candidates', active: isCandidates },
-            { label: 'AI Agent Screening', path: '/agent', active: location.pathname === '/agent' },
-            { label: 'Pipeline', path: '/pipeline', active: location.pathname === '/pipeline' },
-          ].map(({ label, path, active }) => (
-            <button key={path} onClick={() => navigate(path)} style={{
-              padding: '6px 14px', borderRadius: '6px', fontSize: '13px',
-              fontWeight: active ? '600' : '500', border: 'none', cursor: 'pointer',
-              backgroundColor: active ? 'rgba(0, 229, 255, 0.1)' : 'transparent',
-              color: active ? 'var(--accent)' : 'var(--text-secondary)',
-              transition: 'all 0.15s ease',
-            }}>
-              {label}
-            </button>
-          ))}
-        </div>
+      {/* Top section: Logo */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '32px', paddingLeft: '8px' }}>
+        <img src={logo} alt="Silicon Patterns" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
+        <span style={{ fontWeight: '600', fontSize: '15px', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+          Silicon Patterns
+        </span>
+      </div>
+      
+      {/* Navigation Links */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+        <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px', paddingLeft: '8px' }}>Overview</div>
+        {[
+          { label: 'Search', path: '/', active: isSearch },
+          { label: candidateCount > 0 ? `Candidates (${candidateCount})` : 'Candidates', path: '/candidates', active: isCandidates },
+          { label: 'AI Agent Screening', path: '/agent', active: location.pathname === '/agent' },
+          { label: 'Pipeline', path: '/pipeline', active: location.pathname === '/pipeline' },
+        ].map(({ label, path, active }) => (
+          <button key={path} onClick={() => navigate(path)} style={{
+            padding: '8px 12px', borderRadius: '6px', fontSize: '13px',
+            fontWeight: '500', border: 'none', cursor: 'pointer', textAlign: 'left',
+            backgroundColor: active ? 'var(--bg-surface)' : 'transparent',
+            color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+            transition: 'all 0.15s ease',
+          }}>
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Right side */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {/* DB Connection Badge */}
-        <span style={{
-          fontSize: '10px', fontWeight: '600',
-          backgroundColor: dbStatus === 'connected' ? 'rgba(22, 163, 74, 0.15)' : dbStatus === 'connecting' ? 'rgba(217, 119, 6, 0.15)' : 'rgba(220, 38, 38, 0.15)', 
-          color: dbStatus === 'connected' ? '#4ade80' : dbStatus === 'connecting' ? '#fbbf24' : '#f87171', 
-          border: `1px solid ${dbStatus === 'connected' ? 'rgba(74, 222, 128, 0.3)' : dbStatus === 'connecting' ? 'rgba(251, 191, 36, 0.3)' : 'rgba(248, 113, 113, 0.3)'}`,
-          padding: '2px 8px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '4px'
-        }}>
-          <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: dbStatus === 'connected' ? '#4ade80' : dbStatus === 'connecting' ? '#fbbf24' : dbStatus === 'error' ? '#f87171' : '#9ca3af' }} />
-          {badge.label}
-        </span>
+      {/* Bottom section: Theme, Settings, DB Status */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '500' }}>Theme</span>
+          <button 
+            onClick={toggleTheme}
+            style={{
+              background: 'var(--bg-surface)', border: '1px solid var(--border-color)', cursor: 'pointer',
+              padding: '2px', borderRadius: '16px', display: 'flex', alignItems: 'center',
+              width: '40px', height: '22px', position: 'relative', transition: 'all 0.15s'
+            }}
+            title="Toggle Theme"
+          >
+            <span style={{ fontSize: '10px', marginLeft: '3px', opacity: theme === 'dark' ? 1 : 0, position: 'absolute', left: '2px' }}>🌙</span>
+            <span style={{ fontSize: '10px', marginRight: '3px', opacity: theme === 'light' ? 1 : 0, position: 'absolute', right: '2px' }}>☀️</span>
+            <div style={{
+              width: '16px', height: '16px', backgroundColor: 'var(--text-primary)', borderRadius: '50%',
+              transform: theme === 'dark' ? 'translateX(18px)' : 'translateX(0)',
+              transition: 'transform 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', zIndex: 1
+            }} />
+          </button>
+        </div>
 
-        {/* Theme Toggle */}
-        <button 
-          onClick={toggleTheme}
-          style={{
-            background: 'var(--bg-surface)', border: '1px solid var(--border-color)', cursor: 'pointer',
-            padding: '2px', borderRadius: '16px', display: 'flex', alignItems: 'center',
-            width: '44px', height: '24px', position: 'relative', transition: 'all 0.15s',
-            marginLeft: '8px'
-          }}
-          title="Toggle Theme"
-        >
-          <span style={{ fontSize: '11px', marginLeft: '3px', opacity: theme === 'dark' ? 1 : 0, position: 'absolute', left: '2px' }}>🌙</span>
-          <span style={{ fontSize: '11px', marginRight: '3px', opacity: theme === 'light' ? 1 : 0, position: 'absolute', right: '2px' }}>☀️</span>
-          <div style={{
-            width: '18px', height: '18px', backgroundColor: 'var(--text-primary)', borderRadius: '50%',
-            transform: theme === 'dark' ? 'translateX(20px)' : 'translateX(0)',
-            transition: 'transform 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', zIndex: 1
-          }} />
-        </button>
-
-        {/* Settings Button */}
         <button 
           onClick={onOpenSettings}
           style={{
-            background: 'none', border: '1px solid var(--border-color)', cursor: 'pointer',
-            padding: '6px 10px', borderRadius: '6px', fontSize: '14px', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', transition: 'all 0.15s'
+            background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+            padding: '8px 12px', borderRadius: '6px', fontSize: '13px', display: 'flex',
+            alignItems: 'center', color: 'var(--text-secondary)', transition: 'all 0.15s', fontWeight: '500'
           }}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-surface)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-          title="Workspace Settings"
         >
           ⚙️ Settings
         </button>
+
+        {/* DB Connection Badge */}
+        <div style={{ padding: '0 8px' }}>
+          <span style={{
+            fontSize: '11px', fontWeight: '500',
+            backgroundColor: badge.bg, 
+            color: badge.color, 
+            border: `1px solid ${badge.border}`,
+            padding: '4px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px'
+          }}>
+            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: badge.dot }} />
+            {badge.label}
+          </span>
+        </div>
       </div>
     </nav>
   );
@@ -347,19 +349,20 @@ function SearchPage({ masterLeads, setMasterLeads }) {
   };
 
   return (
-    <div style={{ padding: '32px 20px', maxWidth: '760px', margin: '0 auto' }}>
-      <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.5)', padding: '36px' }}>
-        <div style={{ marginBottom: '32px', paddingBottom: '24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2 style={{ margin: '0 0 4px 0', fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Targeted Search</h2>
-            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>Configure parameters and launch a LinkedIn scrape</p>
-          </div>
-          {masterLeads.length > 0 && (
-            <button onClick={() => navigate('/candidates')} style={{ padding: '8px 16px', backgroundColor: 'var(--bg-main)', color: 'var(--accent)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
-              View {masterLeads.length} Candidates →
-            </button>
-          )}
+    <div style={{ padding: '40px', maxWidth: '800px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <div>
+          <h1 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: '600', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Targeted Search</h1>
+          <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)' }}>Configure parameters and launch a LinkedIn scrape to find candidates.</p>
         </div>
+        {masterLeads.length > 0 && (
+          <button onClick={() => navigate('/candidates')} style={{ padding: '8px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'all 0.15s' }}>
+            View {masterLeads.length} Candidates →
+          </button>
+        )}
+      </div>
+
+      <div style={{ backgroundColor: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)', padding: '24px' }}>
 
         <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           <div>
@@ -386,8 +389,8 @@ function SearchPage({ masterLeads, setMasterLeads }) {
                   style={inputStyle}
                 />
                 <button type="button" onClick={handleAddCustomSkill} style={{
-                  padding: '0 16px', backgroundColor: 'var(--bg-main)', color: 'var(--accent)', border: '1px solid var(--accent)',
-                  borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer'
+                  padding: '0 16px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none',
+                  borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
                 }}>Add</button>
               </div>
             </div>
@@ -398,15 +401,15 @@ function SearchPage({ masterLeads, setMasterLeads }) {
             }}>
               {selectedSkills.map(skill => (
                 <button key={skill} type="button" onClick={() => toggleSkill(skill)} style={{
-                  padding: '7px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: '500',
+                  padding: '5px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: '500',
                   cursor: 'pointer', transition: 'all 0.15s ease',
-                  border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: '#000000',
+                  border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)',
                 }}>{skill} ✕</button>
               ))}
 
               {filteredSkills.filter(s => !selectedSkills.includes(s)).map(skill => (
                 <button key={skill} type="button" onClick={() => toggleSkill(skill)} style={{
-                  padding: '7px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: '500',
+                  padding: '5px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: '500',
                   cursor: 'pointer', transition: 'all 0.15s ease',
                   border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
                 }}>{skill}</button>
@@ -442,20 +445,21 @@ function SearchPage({ masterLeads, setMasterLeads }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: 'var(--bg-main)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-            <input type="checkbox" id="openToWork" checked={openToWork} onChange={e => setOpenToWork(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 0' }}>
+            <input type="checkbox" id="openToWork" checked={openToWork} onChange={e => setOpenToWork(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
             <label htmlFor="openToWork" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>Enforce "Open to Work" profile requirements</label>
           </div>
 
-          <button type="submit" disabled={loading} style={{
-            padding: '13px', backgroundColor: loading ? 'var(--border-color)' : 'var(--accent)',
-            color: loading ? 'var(--text-secondary)' : '#000000', border: 'none', borderRadius: '6px',
-            fontSize: '14px', fontWeight: '700',
-            cursor: loading ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
-            boxShadow: loading ? 'none' : '0 0 15px rgba(0, 229, 255, 0.4)'
-          }}>
-            {loading ? 'Executing Data Scrape...' : 'Run Targeted Search'}
-          </button>
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="submit" disabled={loading} style={{
+              padding: '10px 20px', backgroundColor: loading ? 'var(--border-color)' : 'var(--accent)',
+              color: 'var(--accent-fg)', border: 'none', borderRadius: '6px',
+              fontSize: '14px', fontWeight: '500',
+              cursor: loading ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
+            }}>
+              {loading ? 'Executing Data Scrape...' : 'Run Targeted Search'}
+            </button>
+          </div>
         </form>
 
         {status && (
@@ -478,8 +482,8 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         {latestRunResults.length > 0 && (
           <div style={{ marginTop: '32px', paddingTop: '28px', borderTop: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>{latestRunResults.length} New Candidates Added</h3>
-              <button onClick={() => navigate('/candidates')} style={{ padding: '6px 14px', backgroundColor: 'var(--bg-main)', color: 'var(--accent)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '500', color: 'var(--text-primary)' }}>{latestRunResults.length} New Candidates Added</h3>
+              <button onClick={() => navigate('/candidates')} style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>
                 View All in Database →
               </button>
             </div>
@@ -492,11 +496,11 @@ function SearchPage({ masterLeads, setMasterLeads }) {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <span style={{
-                      backgroundColor: p.matchScore >= 70 ? 'rgba(22, 163, 74, 0.15)' : p.matchScore >= 40 ? 'rgba(217, 119, 6, 0.15)' : 'var(--bg-main)',
-                      color: p.matchScore >= 70 ? '#4ade80' : p.matchScore >= 40 ? '#fbbf24' : 'var(--text-secondary)',
-                      padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '700', border: `1px solid ${p.matchScore >= 70 ? 'rgba(74, 222, 128, 0.3)' : p.matchScore >= 40 ? 'rgba(251, 191, 36, 0.3)' : 'var(--border-color)'}`
-                    }}>{p.matchScore}</span>
-                    <a href={safeExtractText(p.linkedinUrl || p.url)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}>↗</a>
+                      backgroundColor: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500', border: '1px solid var(--border-color)'
+                    }}>{p.matchScore} Match</span>
+                    <a href={safeExtractText(p.linkedinUrl || p.url)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}>↗</a>
                   </div>
                 </div>
               ))}
@@ -726,15 +730,17 @@ export default function App() {
 alter table candidates disable row level security;`;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-main)', fontFamily: 'var(--sans)', color: 'var(--text-primary)' }}>
-      <Nav candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} theme={theme} toggleTheme={toggleTheme} />
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-main)', fontFamily: 'var(--sans)', color: 'var(--text-primary)' }}>
+      <Sidebar candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} theme={theme} toggleTheme={toggleTheme} />
       
-      <Routes>
-        <Route path="/" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-        <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-        <Route path="/agent" element={<AIAgentPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-        <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-      </Routes>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        <Routes>
+          <Route path="/" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+          <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+          <Route path="/agent" element={<AIAgentPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+          <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+        </Routes>
+      </div>
 
       {/* Settings Modal Dialog */}
       {showSettings && (

@@ -87,15 +87,14 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
             <div 
               key={stage.id} 
               style={{
-                backgroundColor: 'var(--bg-surface)',
+                backgroundColor: 'var(--bg-main)',
                 border: '1px solid var(--border-color)',
-                borderRadius: '12px',
+                borderRadius: '8px',
                 padding: '12px',
                 minHeight: '500px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '10px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.5)'
               }}
             >
               {/* Column Header */}
@@ -149,24 +148,21 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                       <div 
                         key={cardIdx}
                         style={{
-                          backgroundColor: 'var(--bg-main)',
+                          backgroundColor: 'var(--bg-surface)',
                           border: '1px solid var(--border-color)',
                           borderRadius: '8px',
                           padding: '12px',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '8px',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.5)',
-                          transition: 'transform 0.15s, box-shadow 0.15s',
+                          transition: 'border-color 0.15s',
                           cursor: 'default'
                         }}
                         onMouseEnter={e => {
-                          e.currentTarget.style.transform = 'translateY(-2px)';
-                          e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.8), 0 2px 4px -1px rgba(0,0,0,0.5)';
+                          e.currentTarget.style.borderColor = 'var(--border-hover)';
                         }}
                         onMouseLeave={e => {
-                          e.currentTarget.style.transform = 'none';
-                          e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.5)';
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
                         }}
                       >
                         {/* Card Top: Name + Score */}
@@ -260,12 +256,12 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                           <button
                             onClick={() => navigate('/candidates', { state: { highlightCandidateUrl: candidate.linkedinUrl || candidate.url } })}
                             style={{
-                              width: '100%', padding: '4px 0', border: '1px solid rgba(0, 229, 255, 0.3)', borderRadius: '4px',
-                              backgroundColor: 'rgba(0, 229, 255, 0.1)', color: 'var(--accent)', cursor: 'pointer',
-                              fontSize: '10px', fontWeight: '600', transition: 'background-color 0.1s'
+                              width: '100%', padding: '4px 0', border: '1px solid var(--border-color)', borderRadius: '4px',
+                              backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', cursor: 'pointer',
+                              fontSize: '10px', fontWeight: '500', transition: 'background-color 0.1s'
                             }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0, 229, 255, 0.2)'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0, 229, 255, 0.1)'}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--bg-main)'}
                           >
                             View Details 🔍
                           </button>
@@ -322,8 +318,8 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
               <button 
                 onClick={() => setViewingReasoning(null)} 
                 style={{
-                  padding: '6px 16px', backgroundColor: 'var(--accent)', color: '#000', border: 'none',
-                  borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer'
+                  padding: '6px 16px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none',
+                  borderRadius: '6px', fontSize: '12px', fontWeight: '500', cursor: 'pointer'
                 }}
               >
                 Close
