@@ -51,37 +51,6 @@ export function isCandidateOpenToWork(profile) {
   return false;
 }
 
-function calculateCandidateScore(profile, selectedSkills, targetLocation, targetDesignations) {
-  let score = 0;
-  const headline = safeExtractText(profile.headline).toLowerCase();
-  const currentTitle = safeExtractText(profile.currentTitle || profile.jobTitle).toLowerCase();
-  const location = safeExtractText(profile.location).toLowerCase();
-  const skillsList = extractSkillsList(profile).toLowerCase();
-  const about = safeExtractText(profile.about || profile.summary).toLowerCase();
-
-  if (selectedSkills.length > 0) {
-    const pointsPerSkill = 50 / selectedSkills.length;
-    selectedSkills.forEach(skill => {
-      const sk = skill.toLowerCase();
-      if (headline.includes(sk) || currentTitle.includes(sk) || skillsList.includes(sk) || about.includes(sk)) score += pointsPerSkill;
-    });
-  }
-
-  if (targetLocation) {
-    const targetLocList = (Array.isArray(targetLocation) ? targetLocation : targetLocation.split(','))
-      .map(loc => loc.trim().toLowerCase())
-      .filter(Boolean);
-    if (targetLocList.some(targetLoc => location.includes(targetLoc))) score += 25;
-  }
-
-  const designationList = Array.isArray(targetDesignations) ? targetDesignations : [targetDesignations];
-  if (designationList.some(d => d && currentTitle.includes(d.toLowerCase()))) score += 25;
-
-  if (isCandidateOpenToWork(profile)) score += 15;
-
-  return Math.min(Math.round(score), 100);
-}
-
 function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -158,8 +127,12 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
             }}
             title="Toggle Theme"
           >
-            <span style={{ fontSize: '10px', marginLeft: '3px', opacity: theme === 'dark' ? 1 : 0, position: 'absolute', left: '2px' }}>🌙</span>
-            <span style={{ fontSize: '10px', marginRight: '3px', opacity: theme === 'light' ? 1 : 0, position: 'absolute', right: '2px' }}>☀️</span>
+            <span style={{ fontSize: '10px', marginLeft: '3px', opacity: theme === 'dark' ? 1 : 0, position: 'absolute', left: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-primary)' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+            </span>
+            <span style={{ fontSize: '10px', marginRight: '3px', opacity: theme === 'light' ? 1 : 0, position: 'absolute', right: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            </span>
             <div style={{
               width: '16px', height: '16px', backgroundColor: 'var(--text-primary)', borderRadius: '50%',
               transform: theme === 'dark' ? 'translateX(18px)' : 'translateX(0)',
@@ -178,7 +151,7 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-surface)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
         >
-          ⚙️ Settings
+          Settings
         </button>
 
         {/* DB Connection Badge */}
@@ -306,7 +279,7 @@ function SearchPage({ masterLeads, setMasterLeads }) {
       profiles.forEach(profile => {
         const profileUrl = cleanUrl(profile.linkedinUrl || profile.url);
         if (!existingUrls.has(profileUrl)) {
-          profile.matchScore = calculateCandidateScore(profile, selectedSkills, location, designationTitles);
+          profile.matchScore = null;
           profile._searchedDesignation = designationTitles.join(', ');
           profile._searchedLocation = location;
           profile._searchedSkills = [...selectedSkills];
@@ -321,11 +294,12 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         return;
       }
 
-      newUniqueProfiles.sort((a, b) => b.matchScore - a.matchScore);
+      const getEffectiveScore = (p) => (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : 0;
+      newUniqueProfiles.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a));
       setLatestRunResults(newUniqueProfiles);
 
       const updatedMaster = [...masterLeads, ...newUniqueProfiles];
-      updatedMaster.sort((a, b) => b.matchScore - a.matchScore);
+      updatedMaster.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a));
       setMasterLeads(updatedMaster);
 
       setStatus(`Found ${profiles.length} profiles. Added ${newUniqueProfiles.length} NEW candidates to Master Database.`);
@@ -470,7 +444,8 @@ function SearchPage({ masterLeads, setMasterLeads }) {
             </div>
             {apifyRunUrl && (
               <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>🔴 Live Run:</span>
+                <span style={{ display: 'inline-block', width: '8px', height: '8px', flexShrink: 0, backgroundColor: '#ef4444', borderRadius: '50%', boxShadow: '0 0 8px #ef4444' }} />
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Live Run:</span>
                 <a href={apifyRunUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: '600', textDecoration: 'none' }}>
                   Watch on Apify Console →
                 </a>
@@ -495,11 +470,13 @@ function SearchPage({ masterLeads, setMasterLeads }) {
                     <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>{safeExtractText(p.currentTitle || p.jobTitle || p.headline).substring(0, 60)}</p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{
-                      backgroundColor: 'var(--bg-surface)',
-                      color: 'var(--text-primary)',
-                      padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500', border: '1px solid var(--border-color)'
-                    }}>{p.matchScore} Match</span>
+                    {p.agentScore !== undefined && p.agentScore !== null && (
+                      <span style={{
+                        backgroundColor: 'rgba(0, 229, 255, 0.15)',
+                        color: 'var(--accent)',
+                        padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500', border: '1px solid rgba(0, 229, 255, 0.3)'
+                      }}>Score: {p.agentScore}</span>
+                    )}
                     <a href={safeExtractText(p.linkedinUrl || p.url)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}>↗</a>
                   </div>
                 </div>
@@ -758,7 +735,7 @@ alter table candidates disable row level security;`;
             {/* Modal Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                ⚙️ Workspace Settings
+                Workspace Settings
               </h3>
               <button 
                 onClick={() => setShowSettings(false)}
