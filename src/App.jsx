@@ -11,7 +11,19 @@ const ACTOR_NAME = 'harvestapi~linkedin-profile-search';
 
 function safeExtractText(field) {
   if (field === null || field === undefined) return 'N/A';
-  if (typeof field === 'string') return field;
+  if (typeof field === 'string') {
+    const trimmed = field.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.linkedinText) return parsed.linkedinText;
+        return Object.values(parsed).filter(val => typeof val === 'string' || typeof val === 'number').join(' ');
+      } catch (e) {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
   if (Array.isArray(field)) {
     return field.map(item => {
       if (typeof item === 'object') return Object.values(item).filter(v => typeof v === 'string').join(' ');
@@ -19,6 +31,7 @@ function safeExtractText(field) {
     }).join(' | ');
   }
   if (typeof field === 'object') {
+    if (field.linkedinText) return field.linkedinText;
     return Object.values(field).filter(val => typeof val === 'string' || typeof val === 'number').join(' ');
   }
   return String(field);
@@ -42,7 +55,7 @@ export function isCandidateOpenToWork(profile) {
   const headline = safeExtractText(profile.headline).toLowerCase();
   const title = safeExtractText(profile.currentTitle || profile.jobTitle).toLowerCase();
   const about = safeExtractText(profile.about || profile.summary).toLowerCase();
-  
+
   const keywords = ['open to work', '#opentowork', 'looking for new', 'actively looking', 'seeking new'];
   for (const kw of keywords) {
     if (headline.includes(kw) || title.includes(kw) || about.includes(kw)) return true;
@@ -91,7 +104,7 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
           Silicon Patterns
         </span>
       </div>
-      
+
       {/* Navigation Links */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
         <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px', paddingLeft: '8px' }}>Overview</div>
@@ -115,10 +128,10 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
 
       {/* Bottom section: Theme, Settings, DB Status */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px' }}>
           <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '500' }}>Theme</span>
-          <button 
+          <button
             onClick={toggleTheme}
             style={{
               background: 'var(--bg-surface)', border: '1px solid var(--border-color)', cursor: 'pointer',
@@ -128,10 +141,10 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
             title="Toggle Theme"
           >
             <span style={{ fontSize: '10px', marginLeft: '3px', opacity: theme === 'dark' ? 1 : 0, position: 'absolute', left: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-primary)' }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
             </span>
             <span style={{ fontSize: '10px', marginRight: '3px', opacity: theme === 'light' ? 1 : 0, position: 'absolute', right: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
             </span>
             <div style={{
               width: '16px', height: '16px', backgroundColor: 'var(--text-primary)', borderRadius: '50%',
@@ -141,7 +154,7 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
           </button>
         </div>
 
-        <button 
+        <button
           onClick={onOpenSettings}
           style={{
             background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
@@ -158,8 +171,8 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
         <div style={{ padding: '0 8px' }}>
           <span style={{
             fontSize: '11px', fontWeight: '500',
-            backgroundColor: badge.bg, 
-            color: badge.color, 
+            backgroundColor: badge.bg,
+            color: badge.color,
             border: `1px solid ${badge.border}`,
             padding: '4px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px'
           }}>
@@ -211,7 +224,17 @@ function SearchPage({ masterLeads, setMasterLeads }) {
     setStatus('Initiating search protocol...');
 
     try {
-      let finalQuery = `(${selectedSkills.join(' OR ')})`;
+      const expandSkillForQuery = (skill) => {
+        const matchGen = skill.match(/^(.+?)\s+Gen(\d+)$/i);
+        if (matchGen) {
+          const base = matchGen[1];
+          const gen = matchGen[2];
+          return `("${skill}" OR "${base} Gen ${gen}" OR "${base} ${gen}.0" OR "${base} ${gen}")`;
+        }
+        return `"${skill}"`;
+      };
+
+      let finalQuery = `(${selectedSkills.map(expandSkillForQuery).join(' OR ')})`;
       if (companies.trim() !== '') {
         const compArr = companies.split(',').map(c => `"${c.trim()}"`).join(' OR ');
         finalQuery += ` AND (${compArr})`;
@@ -228,7 +251,7 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         currentJobTitles: designationTitles,
         ...(experience !== 'any' && { yearsOfExperienceIds: [experience] }),
         profileScraperMode: "Full",
-        maxItems: 50
+        maxItems: 100
       };
 
       const currentApifyToken = localStorage.getItem('siliconPatternsApifyKey') || DEFAULT_APIFY_TOKEN;
@@ -279,11 +302,26 @@ function SearchPage({ masterLeads, setMasterLeads }) {
       profiles.forEach(profile => {
         const profileUrl = cleanUrl(profile.linkedinUrl || profile.url);
         if (!existingUrls.has(profileUrl)) {
-          profile.matchScore = null;
-          profile._searchedDesignation = designationTitles.join(', ');
-          profile._searchedLocation = location;
-          profile._searchedSkills = [...selectedSkills];
-          newUniqueProfiles.push(profile);
+          const prunedProfile = {
+            firstName: profile.firstName,
+            lastName: profile.lastName,
+            headline: profile.headline,
+            currentTitle: profile.currentTitle || profile.jobTitle,
+            location: profile.location,
+            about: profile.about || profile.summary,
+            skills: profile.skills,
+            positions: profile.positions || profile.experience,
+            educations: profile.educations || profile.education,
+            linkedinUrl: profile.linkedinUrl || profile.url,
+            url: profile.url,
+            isOpenToWork: profile.isOpenToWork,
+            matchScore: null,
+            status: 'sourced',
+            _searchedDesignation: designationTitles.join(', '),
+            _searchedLocation: location,
+            _searchedSkills: [...selectedSkills]
+          };
+          newUniqueProfiles.push(prunedProfile);
           existingUrls.add(profileUrl);
         }
       });
@@ -494,14 +532,14 @@ function SearchPage({ masterLeads, setMasterLeads }) {
 
 export default function App() {
   const [masterLeads, setMasterLeads] = useState([]);
-  
+
   // Database Config State
   const [useSupabase, setUseSupabase] = useState(false);
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
   const [dbStatus, setDbStatus] = useState('local'); // 'local' | 'connecting' | 'connected' | 'error'
   const [showSettings, setShowSettings] = useState(false);
-  
+
   // Theme State
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('siliconPatternsTheme') || 'dark';
@@ -515,7 +553,7 @@ export default function App() {
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
-  
+
   // Settings Inputs
   const [inputUrl, setInputUrl] = useState('');
   const [inputKey, setInputKey] = useState('');
@@ -529,11 +567,11 @@ export default function App() {
     const dbMode = localStorage.getItem('siliconPatternsDbMode') === 'supabase';
     const dbUrl = localStorage.getItem('siliconPatternsSupabaseUrl') || '';
     const dbKey = localStorage.getItem('siliconPatternsSupabaseKey') || '';
-    
+
     setUseSupabase(dbMode);
     setSupabaseUrl(dbUrl);
     setSupabaseKey(dbKey);
-    
+
     setInputUseSupabase(dbMode);
     setInputUrl(dbUrl);
     setInputKey(dbKey);
@@ -557,7 +595,7 @@ export default function App() {
           const savedData = localStorage.getItem('siliconPatternsMasterDatabase');
           if (savedData) {
             try { setMasterLeads(JSON.parse(savedData)); }
-            catch (e) {}
+            catch (e) { }
           }
         });
     } else {
@@ -572,19 +610,26 @@ export default function App() {
   // Intercept and synchronize all leads mutations (creates, updates, deletes)
   const syncMasterLeads = async (newLeads) => {
     const resolvedLeads = typeof newLeads === 'function' ? newLeads(masterLeads) : newLeads;
-    
+
     setMasterLeads(resolvedLeads);
-    
+
     if (resolvedLeads.length === 0) {
       localStorage.removeItem('siliconPatternsMasterDatabase');
     } else {
-      localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(resolvedLeads));
+      try {
+        localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(resolvedLeads));
+      } catch (err) {
+        console.error("Local storage save failed. Data may be too large:", err);
+        if (!useSupabase) {
+          alert("Warning: Browser local storage is full. Candidate data could not be saved locally. Please connect a Supabase database to store more candidates, or clear some data.");
+        }
+      }
     }
 
     if (useSupabase && supabaseUrl && supabaseKey) {
       try {
         const { upsertCandidatesToSupabase, deleteCandidateFromSupabase } = await import('./supabase.js');
-        
+
         // Handle deletion: find if any candidate was removed
         if (resolvedLeads.length < masterLeads.length) {
           const resolvedUrls = new Set(resolvedLeads.map(l => l.linkedinUrl || l.url));
@@ -593,7 +638,7 @@ export default function App() {
             await deleteCandidateFromSupabase(supabaseUrl, supabaseKey, cand).catch(e => console.error(e));
           }
         }
-        
+
         // Upsert active leads
         if (resolvedLeads.length > 0) {
           await upsertCandidatesToSupabase(supabaseUrl, supabaseKey, resolvedLeads);
@@ -608,11 +653,11 @@ export default function App() {
   // Connect & migrate local storage to online shared database
   const handleConnectSupabase = async (e) => {
     e.preventDefault();
-    
+
     // Save API Keys globally
     localStorage.setItem('siliconPatternsApifyKey', inputApifyKey);
     localStorage.setItem('siliconPatternsGroqApiKey', inputGroqKey);
-    
+
     if (inputUseSupabase && (!inputUrl.trim() || !inputKey.trim())) {
       alert("Please enter a valid Supabase URL and API Key.");
       return;
@@ -622,19 +667,19 @@ export default function App() {
     try {
       if (inputUseSupabase) {
         const { fetchCandidatesFromSupabase, upsertCandidatesToSupabase } = await import('./supabase.js');
-        
+
         // 1. Fetch remote candidates
         const remoteCandidates = await fetchCandidatesFromSupabase(inputUrl, inputKey);
-        
+
         // 2. Perform two-way merge
         const mergedMap = new Map();
-        
+
         // Place local leads first
         masterLeads.forEach(c => {
           const u = (c.linkedinUrl || c.url || '').split('?')[0].toLowerCase().trim();
           if (u) mergedMap.set(u, c);
         });
-        
+
         // Merge in remote leads, keeping newer metrics
         remoteCandidates.forEach(c => {
           const u = (c.linkedinUrl || c.url || '').split('?')[0].toLowerCase().trim();
@@ -654,7 +699,7 @@ export default function App() {
         });
 
         const mergedLeads = Array.from(mergedMap.values());
-        
+
         // 3. Push complete dataset back to Supabase
         if (mergedLeads.length > 0) {
           await upsertCandidatesToSupabase(inputUrl, inputKey, mergedLeads);
@@ -663,11 +708,11 @@ export default function App() {
         // 4. Update state and config
         setMasterLeads(mergedLeads);
         localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(mergedLeads));
-        
+
         localStorage.setItem('siliconPatternsDbMode', 'supabase');
         localStorage.setItem('siliconPatternsSupabaseUrl', inputUrl);
         localStorage.setItem('siliconPatternsSupabaseKey', inputKey);
-        
+
         setUseSupabase(true);
         setSupabaseUrl(inputUrl);
         setSupabaseKey(inputKey);
@@ -709,7 +754,7 @@ alter table candidates disable row level security;`;
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-main)', fontFamily: 'var(--sans)', color: 'var(--text-primary)' }}>
       <Sidebar candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} theme={theme} toggleTheme={toggleTheme} />
-      
+
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <Routes>
           <Route path="/" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
@@ -737,7 +782,7 @@ alter table candidates disable row level security;`;
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
                 Workspace Settings
               </h3>
-              <button 
+              <button
                 onClick={() => setShowSettings(false)}
                 style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)' }}
               >×</button>
@@ -852,7 +897,7 @@ alter table candidates disable row level security;`;
                     >
                       {showSqlHelp ? 'Hide SQL Table Setup Instructions' : 'View SQL Table Setup Instructions'}
                     </button>
-                    
+
                     {showSqlHelp && (
                       <div style={{ marginTop: '8px' }}>
                         <p style={{ margin: '0 0 6px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
@@ -873,7 +918,7 @@ alter table candidates disable row level security;`;
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '8px' }}>
-                <button 
+                <button
                   type="button"
                   onClick={() => setShowSettings(false)}
                   style={{
@@ -884,7 +929,7 @@ alter table candidates disable row level security;`;
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   type="submit"
                   style={{
                     padding: '8px 16px', backgroundColor: 'var(--accent)', color: '#000',

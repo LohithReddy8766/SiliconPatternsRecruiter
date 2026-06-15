@@ -14,7 +14,19 @@ const STAGE_BADGES = {
 
 function safeExtractText(field) {
   if (field === null || field === undefined) return 'N/A';
-  if (typeof field === 'string') return field;
+  if (typeof field === 'string') {
+    const trimmed = field.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.linkedinText) return parsed.linkedinText;
+        return Object.values(parsed).filter(val => typeof val === 'string' || typeof val === 'number').join(' ');
+      } catch (e) {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
   if (Array.isArray(field)) {
     return field.map(item => {
       if (typeof item === 'object') return Object.values(item).filter(v => typeof v === 'string').join(' ');
@@ -22,6 +34,7 @@ function safeExtractText(field) {
     }).join(' | ');
   }
   if (typeof field === 'object') {
+    if (field.linkedinText) return field.linkedinText;
     return Object.values(field).filter(val => typeof val === 'string' || typeof val === 'number').join(' ');
   }
   return String(field);

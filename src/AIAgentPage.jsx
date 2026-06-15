@@ -255,8 +255,13 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
     });
 
     setMasterLeads(updatedLeads);
-    localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(updatedLeads));
-    alert('AI Agent scores and reasonings successfully integrated into your main Candidate Database!');
+    try {
+      localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(updatedLeads));
+      alert('AI Agent scores and reasonings successfully integrated into your main Candidate Database!');
+    } catch (err) {
+      console.error("Local storage save failed. Data may be too large:", err);
+      alert('Scores integrated, but browser local storage is full. Candidate data could not be saved locally. Please connect a Supabase database to store more candidates, or clear some data.');
+    }
   };
 
   // Template loaders

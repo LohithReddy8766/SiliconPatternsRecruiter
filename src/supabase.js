@@ -80,20 +80,25 @@ export async function upsertCandidatesToSupabase(url, key, candidates) {
     };
   });
 
-  const res = await fetch(`${cleanBaseUrl}/rest/v1/candidates`, {
-    method: 'POST',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'resolution=merge-duplicates' // Tells postgrest to upsert on duplicate primary key
-    },
-    body: JSON.stringify(payload)
-  });
+  // Chunk payload into batches of 50 to avoid 413 Payload Too Large
+  const chunkSize = 50;
+  for (let i = 0; i < payload.length; i += chunkSize) {
+    const chunk = payload.slice(i, i + chunkSize);
+    const res = await fetch(`${cleanBaseUrl}/rest/v1/candidates`, {
+      method: 'POST',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates' // Tells postgrest to upsert on duplicate primary key
+      },
+      body: JSON.stringify(chunk)
+    });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Failed to save candidates to Supabase: ${errText || res.statusText}`);
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Failed to save candidates chunk to Supabase: ${errText || res.statusText}`);
+    }
   }
 }
 
