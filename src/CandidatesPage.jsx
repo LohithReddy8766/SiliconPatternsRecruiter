@@ -49,7 +49,8 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
   const skills = extractSkillsList(profile);
   const url = safeExtractText(profile.linkedinUrl || profile.url);
   const about = safeExtractText(profile.about || profile.summary);
-  const scoreColors = getScoreColor(profile.matchScore);
+  const displayScore = (profile.agentScore !== undefined && profile.agentScore !== null) ? profile.agentScore : null;
+  const scoreColors = displayScore !== null ? getScoreColor(displayScore) : null;
 
   let experience = '';
   if (profile.positions && Array.isArray(profile.positions)) {
@@ -213,26 +214,40 @@ Generate the JSON outreach sequence now.`
                     OPEN TO WORK
                   </span>
                 )}
+                {profile.agentScore !== undefined && profile.agentScore !== null && (
+                  <span style={{
+                    fontSize: '10px', fontWeight: '600',
+                    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+                    color: 'var(--accent)',
+                    border: '1px solid rgba(0, 229, 255, 0.3)',
+                    padding: '2px 7px', borderRadius: '10px',
+                    display: 'inline-flex', alignItems: 'center', gap: '4px'
+                  }}>
+                    AI Evaluated
+                  </span>
+                )}
               </div>
               <p style={{ margin: '3px 0 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {title}
               </p>
-              <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>📍 {location}</p>
+              <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>{location}</p>
             </div>
           </div>
 
           {/* Score + Actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-            <div style={{
-              backgroundColor: scoreColors.bg, color: scoreColors.text,
-              border: `1px solid ${scoreColors.border}`,
-              borderRadius: '6px', padding: '4px 10px',
-              fontSize: '13px', fontWeight: '600', letterSpacing: '-0.02em',
-              display: 'flex', alignItems: 'center', gap: '4px'
-            }} title={profile.agentScore ? "AI Agent Screened Score" : "Heuristic Score"}>
-              {profile.agentScore && <span style={{ fontSize: '12px' }}>🤖</span>}
-              <span>{profile.matchScore}</span>
-            </div>
+            {displayScore !== null && (
+              <div style={{
+                backgroundColor: scoreColors.bg, color: scoreColors.text,
+                border: `1px solid ${scoreColors.border}`,
+                borderRadius: '6px', padding: '4px 10px',
+                fontSize: '13px', fontWeight: '600', letterSpacing: '-0.02em',
+                display: 'flex', alignItems: 'center', gap: '4px'
+              }} title="AI Screened Score">
+                
+                <span>{displayScore}</span>
+              </div>
+            )}
             {url && url !== 'N/A' && (
               <a href={url} target="_blank" rel="noopener noreferrer" style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -310,8 +325,8 @@ Generate the JSON outreach sequence now.`
             </div>
           )}
           {profile.agentReasoning && (
-            <div style={{ borderLeft: '3px solid var(--border-color)', paddingLeft: '10px', margin: '8px 0', backgroundColor: 'var(--bg-surface)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '600', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🤖 AI Agent Reasoning</p>
+            <div style={{ borderLeft: '3px solid var(--accent)', paddingLeft: '12px', margin: '8px 0', backgroundColor: 'rgba(0, 229, 255, 0.05)', padding: '12px', borderRadius: '6px', border: '1px solid rgba(0, 229, 255, 0.15)' }}>
+              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '600', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>AI Agent Reasoning</p>
               <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.6 }}>{profile.agentReasoning}</p>
             </div>
           )}
@@ -335,7 +350,7 @@ Generate the JSON outreach sequence now.`
                 cursor: 'pointer', transition: 'all 0.15s'
               }}
             >
-              📬 {showOutreach ? 'Close AI Outreach Campaign' : 'AI Outreach Campaign'}
+              {showOutreach ? 'Close AI Outreach Campaign' : 'AI Outreach Campaign'}
             </button>
 
             {showOutreach && (
@@ -358,7 +373,7 @@ Generate the JSON outreach sequence now.`
                       }}
                     />
                     {outreachError && (
-                      <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#f87171' }}>⚠️ {outreachError}</p>
+                      <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#f87171' }}>{outreachError}</p>
                     )}
                     <button
                       onClick={generateOutreach}
@@ -371,7 +386,7 @@ Generate the JSON outreach sequence now.`
                         transition: 'all 0.15s'
                       }}
                     >
-                      {outreachLoading ? '⚙️ Generating Campaign Sequence...' : '✨ Generate Campaign Sequence'}
+                      {outreachLoading ? 'Generating Campaign Sequence...' : 'Generate Campaign Sequence'}
                     </button>
                   </div>
                 ) : (
@@ -429,7 +444,7 @@ Generate the JSON outreach sequence now.`
                           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
                         }}
                       >
-                        {copiedTab === activeOutreachTab ? '✅ Copied!' : '📋 Copy to Clipboard'}
+                        {copiedTab === activeOutreachTab ? 'Copied!' : 'Copy to Clipboard'}
                       </button>
 
                       <button
@@ -516,7 +531,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       else if (p.education && Array.isArray(p.education)) edu = p.education.map(e => `${e.degreeName || ''} from ${e.schoolName || ''}`).join(' | ');
       edu = edu.replace(/[\r\n,"]/g, ' ');
 
-      return `"${p.matchScore}","${safeExtractText(p.firstName)}","${safeExtractText(p.lastName)}","${title}","${loc}","${skills}","${about}","${exp}","${edu}","${url}"`;
+      return `"${p.agentScore !== undefined && p.agentScore !== null ? p.agentScore : 'N/A'}","${safeExtractText(p.firstName)}","${safeExtractText(p.lastName)}","${title}","${loc}","${skills}","${about}","${exp}","${edu}","${url}"`;
     });
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -563,9 +578,11 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       });
     }
 
+    const getEffectiveScore = (p) => (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : 0;
+
     // Min score filter
     if (filterMinScore > 0) {
-      results = results.filter(p => (p.matchScore || 0) >= filterMinScore);
+      results = results.filter(p => getEffectiveScore(p) >= filterMinScore);
     }
 
     // Location filter
@@ -580,8 +597,8 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
 
     // Sort
     switch (sortBy) {
-      case 'score_desc': results.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0)); break;
-      case 'score_asc': results.sort((a, b) => (a.matchScore || 0) - (b.matchScore || 0)); break;
+      case 'score_desc': results.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a)); break;
+      case 'score_asc': results.sort((a, b) => getEffectiveScore(a) - getEffectiveScore(b)); break;
       case 'name_asc': results.sort((a, b) => safeExtractText(a.lastName).localeCompare(safeExtractText(b.lastName))); break;
       case 'name_desc': results.sort((a, b) => safeExtractText(b.lastName).localeCompare(safeExtractText(a.lastName))); break;
       default: break;
@@ -612,7 +629,6 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   if (masterLeads.length === 0) {
     return (
       <div style={{ padding: '80px 20px', textAlign: 'center' }}>
-        <div style={{ fontSize: '40px', marginBottom: '16px' }}>🗂️</div>
         <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)' }}>No candidates yet</h2>
         <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)' }}>Run a search from the Search page to populate your Master Database.</p>
       </div>
@@ -635,7 +651,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button onClick={downloadCSV} style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
-            ⬇️ Export CSV
+            Export CSV
           </button>
           <button onClick={clearAll} style={{ padding: '8px 12px', backgroundColor: 'var(--bg-surface)', color: '#ef4444', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
             Clear All
@@ -648,7 +664,9 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
         {/* Row 1: Search + Sort + View */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '12px', marginBottom: '16px', alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
-            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
+            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </span>
             <input
               type="text"
               placeholder="Search by name, title, skill, location..."
@@ -744,12 +762,12 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       </div>
 
       {/* Score Summary Bar */}
-      {filteredCandidates.length > 0 && (
+      {filteredCandidates.filter(p => p.agentScore !== undefined && p.agentScore !== null).length > 0 && (
         <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
           {[
-            { label: 'High Match (70+)', count: filteredCandidates.filter(p => p.matchScore >= 70).length, color: '#4ade80', bg: 'rgba(22, 163, 74, 0.15)' },
-            { label: 'Mid Match (40–69)', count: filteredCandidates.filter(p => p.matchScore >= 40 && p.matchScore < 70).length, color: '#fbbf24', bg: 'rgba(217, 119, 6, 0.15)' },
-            { label: 'Low Match (<40)', count: filteredCandidates.filter(p => p.matchScore < 40).length, color: 'var(--text-secondary)', bg: 'var(--bg-main)' },
+            { label: 'AI Score: High (70+)', count: filteredCandidates.filter(p => p.agentScore !== undefined && p.agentScore !== null && p.agentScore >= 70).length, color: '#4ade80', bg: 'rgba(22, 163, 74, 0.15)' },
+            { label: 'AI Score: Mid (40–69)', count: filteredCandidates.filter(p => p.agentScore !== undefined && p.agentScore !== null && p.agentScore >= 40 && p.agentScore < 70).length, color: '#fbbf24', bg: 'rgba(217, 119, 6, 0.15)' },
+            { label: 'AI Score: Low (<40)', count: filteredCandidates.filter(p => p.agentScore !== undefined && p.agentScore !== null && p.agentScore < 40).length, color: 'var(--text-secondary)', bg: 'var(--bg-main)' },
           ].map(({ label, count, color, bg }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', backgroundColor: bg, borderRadius: '6px' }}>
               <span style={{ fontSize: '18px', fontWeight: '800', color, lineHeight: 1 }}>{count}</span>
@@ -762,7 +780,6 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       {/* Candidates List */}
       {filteredCandidates.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: 'var(--bg-surface)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔍</div>
           <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>No candidates match your filters</h3>
           <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-secondary)' }}>Try loosening the filters or clearing them entirely.</p>
           <button onClick={resetFilters} style={{ padding: '8px 20px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
@@ -779,7 +796,8 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
         // Compact grid view
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '10px' }}>
           {filteredCandidates.map((p, idx) => {
-            const scoreColors = getScoreColor(p.matchScore);
+            const displayScore = (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : null;
+            const scoreColors = displayScore !== null ? getScoreColor(displayScore) : null;
             const name = `${safeExtractText(p.firstName)} ${safeExtractText(p.lastName)}`.trim();
             const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
             const url = safeExtractText(p.linkedinUrl || p.url);
@@ -814,16 +832,18 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
                     <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title.substring(0, 50)}</p>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', marginLeft: '8px', flexShrink: 0 }}>
-                    <span style={{ backgroundColor: scoreColors.bg, color: scoreColors.text, border: `1px solid ${scoreColors.border}`, padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '800' }}>
-                      {p.matchScore}
-                    </span>
+                    {displayScore !== null && (
+                      <span style={{ backgroundColor: scoreColors.bg, color: scoreColors.text, border: `1px solid ${scoreColors.border}`, padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '800' }}>
+                        {displayScore}
+                      </span>
+                    )}
                     {url && url !== 'N/A' && (
                       <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: 'rgba(0, 229, 255, 0.1)', borderRadius: '4px', color: 'var(--accent)', border: '1px solid rgba(0, 229, 255, 0.3)', fontSize: '10px', fontWeight: '700', textDecoration: 'none' }}>in</a>
                     )}
                     <button onClick={() => removeCandidate(p)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: 'rgba(220, 38, 38, 0.1)', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#f87171' }}>×</button>
                   </div>
                 </div>
-                <p style={{ margin: '0 0 8px', fontSize: '11px', color: 'var(--text-secondary)' }}>📍 {safeExtractText(p.location).split(',')[0]}</p>
+                <p style={{ margin: '0 0 8px', fontSize: '11px', color: 'var(--text-secondary)' }}>{safeExtractText(p.location).split(',')[0]}</p>
                 {skills && skills !== '' && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                     {skills.split(', ').slice(0, 5).map((skill, i) => (

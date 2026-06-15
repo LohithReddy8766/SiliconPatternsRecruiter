@@ -151,22 +151,22 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
               logText = `[Agent] ${stepInfo.message}`;
               logType = 'start';
             } else if (stepInfo.type === 'thought') {
-              logText = `🧠 Thought: ${stepInfo.message}`;
+              logText = `[Thought] ${stepInfo.message}`;
               logType = 'thought';
             } else if (stepInfo.type === 'tool_call') {
-              logText = `🛠️ Action: Calling ${stepInfo.message}`;
+              logText = `[Action] Calling ${stepInfo.message}`;
               logType = 'tool';
             } else if (stepInfo.type === 'observation') {
-              logText = `📊 Observation: ${stepInfo.message}`;
+              logText = `[Observation] ${stepInfo.message}`;
               logType = 'observation';
             } else if (stepInfo.type === 'warning') {
-              logText = `⚠️ Warning: ${stepInfo.message}`;
+              logText = `[Warning] ${stepInfo.message}`;
               logType = 'warning';
             } else if (stepInfo.type === 'error') {
-              logText = `🚨 Error: ${stepInfo.message}`;
+              logText = `[Error] ${stepInfo.message}`;
               logType = 'error';
             } else if (stepInfo.type === 'final') {
-              logText = `🎯 Final Recommendation Compiled! Score: ${stepInfo.result.score}/100`;
+              logText = `[Final Recommendation] Compiled! Score: ${stepInfo.result.score}/100`;
               logType = 'final';
             }
 
@@ -184,9 +184,23 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
         };
         setAgentResults({ ...newResults });
 
+        // Auto-commit to master database in real-time
+        setMasterLeads(prevLeads => {
+          const updated = [...prevLeads];
+          if (updated[idx]) {
+            updated[idx] = {
+              ...updated[idx],
+              agentScore: result.score,
+              agentReasoning: result.reasoning,
+              matchScore: result.score
+            };
+          }
+          return updated;
+        });
+
       } catch (err) {
         console.error("Agent failed for candidate", candidate, err);
-        const errorLog = { type: 'error', text: `🚨 Agent run failed: ${err.message}` };
+        const errorLog = { type: 'error', text: `[Error] Agent run failed: ${err.message}` };
         setAgentLogs(prev => [...prev, errorLog]);
 
         newResults[candUrl] = {
@@ -195,6 +209,20 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
           logs: [errorLog]
         };
         setAgentResults({ ...newResults });
+
+        // Auto-commit failed status in real-time
+        setMasterLeads(prevLeads => {
+          const updated = [...prevLeads];
+          if (updated[idx]) {
+            updated[idx] = {
+              ...updated[idx],
+              agentScore: 0,
+              agentReasoning: `Screening failed: ${err.message}`,
+              matchScore: 0
+            };
+          }
+          return updated;
+        });
       }
     }
 
@@ -203,7 +231,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
     setAgentLogs(prev => [
       ...prev,
       { type: 'system', text: `==================================================` },
-      { type: 'system', text: `🏁 AI AGENT SCREENING COMPLETED FOR ALL TARGETS!` },
+      { type: 'system', text: `AI AGENT SCREENING COMPLETED FOR ALL TARGETS!` },
       { type: 'system', text: `==================================================` }
     ]);
   };
@@ -275,7 +303,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
             onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
             onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--accent)'}
           >
-            💾 Commit Scores to Database
+            Commit Scores to Database
           </button>
         )}
       </div>
@@ -292,7 +320,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
           
           {/* Card 1: Configuration */}
           <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>⚙️ Model Setup</h2>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>Model Setup</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end' }}>
@@ -330,7 +358,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
           {/* Card 2: Screening Target */}
           <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>🎯 Screening Requirements</h2>
+              <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>Screening Requirements</h2>
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button type="button" onClick={() => loadTemplate('ASIC DV')} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', backgroundColor: 'var(--bg-main)', cursor: 'pointer' }}>DV</button>
                 <button type="button" onClick={() => loadTemplate('DFT')} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', backgroundColor: 'var(--bg-main)', cursor: 'pointer' }}>DFT</button>
@@ -355,7 +383,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
           <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>👥 Candidate Pool</h2>
+                <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>Candidate Pool</h2>
                 <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>Select targets for autonomous evaluation</p>
               </div>
               {masterLeads.length > 0 && (
@@ -377,7 +405,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                 <input
                   type="text"
-                  placeholder="🔍 Search candidate name or title..."
+                  placeholder="Search candidate name or title..."
                   value={poolSearch}
                   onChange={e => setPoolSearch(e.target.value)}
                   style={{
@@ -435,7 +463,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                   transition: 'background-color 0.2s'
                 }}
               >
-                {isRunning ? '🤖 Agent Executing Loop...' : `Launch Agent on ${selectedCandidateIds.length} Candidate(s)`}
+                {isRunning ? 'Agent Executing Loop...' : `Launch Agent on ${selectedCandidateIds.length} Candidate(s)`}
               </button>
             )}
 
@@ -486,7 +514,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                        {isCurrent && <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: '700', animation: 'pulse 1.5s infinite' }}>🤖 THINKING</span>}
+                        {isCurrent && <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: '700', animation: 'pulse 1.5s infinite' }}>THINKING</span>}
                         {result && (
                           <span style={{
                             fontSize: '11px', fontWeight: '600',
@@ -557,7 +585,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
 
           {/* Card 5: Screening Results & Scorecards */}
           <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>📊 Screening Results</h2>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>Screening Results</h2>
 
             {Object.keys(agentResults).length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: '13px' }}>

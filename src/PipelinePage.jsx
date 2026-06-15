@@ -50,7 +50,6 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
   if (masterLeads.length === 0) {
     return (
       <div style={{ padding: '80px 20px', textAlign: 'center' }}>
-        <div style={{ fontSize: '40px', marginBottom: '16px' }}>📋</div>
         <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)' }}>Empty Pipeline</h2>
         <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)' }}>No candidates exist in your system to track yet. Go to Search to source them!</p>
       </div>
@@ -137,8 +136,8 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                   </div>
                 ) : (
                   candidatesInStage.map((candidate, cardIdx) => {
-                    const hasAgentScore = candidate.agentScore !== undefined;
-                    const score = candidate.matchScore || 0;
+                    const hasAgentScore = candidate.agentScore !== undefined && candidate.agentScore !== null;
+                    const score = hasAgentScore ? candidate.agentScore : (candidate.matchScore || 0);
 
                     // Score colors helper
                     const scoreColor = score >= 70 ? '#4ade80' : score >= 40 ? '#fbbf24' : 'var(--text-secondary)';
@@ -170,15 +169,16 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                           <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }} title={`${candidate.firstName || ''} ${candidate.lastName || ''}`}>
                             {candidate.firstName || 'Candidate'} {candidate.lastName || ''}
                           </span>
-                          <span style={{
-                            fontSize: '10px', fontWeight: '800',
-                            backgroundColor: scoreBg, color: scoreColor,
-                            padding: '2px 5px', borderRadius: '4px', border: `1px solid ${scoreColor}40`,
-                            display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0
-                          }} title={hasAgentScore ? "AI Screened Score" : "Heuristic Score"}>
-                            {hasAgentScore && <span>🤖</span>}
-                            <span>{score}</span>
-                          </span>
+                          {hasAgentScore && (
+                            <span style={{
+                              fontSize: '10px', fontWeight: '800',
+                              backgroundColor: scoreBg, color: scoreColor,
+                              padding: '2px 5px', borderRadius: '4px', border: `1px solid ${scoreColor}40`,
+                              display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0
+                            }} title="AI Screened Score">
+                              <span>{score}</span>
+                            </span>
+                          )}
                         </div>
 
                         {/* Card Middle: Headline/Job Title */}
@@ -263,7 +263,7 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                             onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
                             onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--bg-main)'}
                           >
-                            View Details 🔍
+                            View Details
                           </button>
                           {candidate.agentReasoning && (
                             <button
@@ -275,7 +275,7 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                               }}
                               title="View AI Agent Screening reasoning"
                             >
-                              🤖
+                              AI
                             </button>
                           )}
                         </div>
@@ -305,9 +305,11 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
                 AI Screening Rationale: {viewingReasoning.candidate.firstName} {viewingReasoning.candidate.lastName}
               </h3>
-              <span style={{ fontSize: '13px', fontWeight: '800', color: '#c084fc', backgroundColor: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(192, 132, 252, 0.3)', padding: '4px 8px', borderRadius: '4px' }}>
-                Score: {viewingReasoning.candidate.matchScore}/100
-              </span>
+              {viewingReasoning.candidate.agentScore !== undefined && viewingReasoning.candidate.agentScore !== null && (
+                <span style={{ fontSize: '13px', fontWeight: '800', color: '#c084fc', backgroundColor: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(192, 132, 252, 0.3)', padding: '4px 8px', borderRadius: '4px' }}>
+                  Score: {viewingReasoning.candidate.agentScore}/100
+                </span>
+              )}
             </div>
 
             <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', whiteSpace: 'pre-wrap', backgroundColor: 'var(--bg-main)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
