@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { runCandidateAgent } from './agent.js';
+import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
+import { extractSkillsList } from './CandidatesPage.jsx';
 
 export default function AIAgentPage({ masterLeads, setMasterLeads }) {
+  const navigate = useNavigate();
+  const [viewMode, setViewMode] = useState('setup');
   // Config state
   const [selectedModel, setSelectedModel] = useState('llama-3.3-70b-versatile');
   
@@ -10,43 +15,20 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
     "Senior ASIC Verification Engineer.\nRequirements:\n- 5+ years of active design verification experience\n- Strong proficiency in UVM and SystemVerilog architectures\n- Experience with PCIe protocol (Gen4/Gen5) validation\n- Excellent debug and testbench layout skills"
   );
 
-  // Selected candidates to run agent on
-  const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
+  // Target Skills state
+  const [targetSkills, setTargetSkills] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('All');
 
-  // Search & Filter State for candidate pool selection
-  const [poolSearch, setPoolSearch] = useState('');
-  const [poolStatusFilter, setPoolStatusFilter] = useState('all');
-  const [poolScreeningFilter, setPoolScreeningFilter] = useState('all');
-
-  // Filtered candidate list for selection
-  const filteredPool = useMemo(() => {
-    return masterLeads.map((candidate, idx) => ({ candidate, idx })).filter(({ candidate }) => {
-      // 1. Text Search (name & current title)
-      if (poolSearch.trim()) {
-        const q = poolSearch.toLowerCase();
-        const firstName = candidate.firstName || '';
-        const lastName = candidate.lastName || '';
-        const name = `${firstName} ${lastName}`.toLowerCase();
-        const title = (candidate.currentTitle || candidate.jobTitle || candidate.headline || '').toLowerCase();
-        if (!name.includes(q) && !title.includes(q)) return false;
-      }
-
-      // 2. Status Filter
-      if (poolStatusFilter !== 'all') {
-        const status = candidate.status || 'sourced';
-        if (status !== poolStatusFilter) return false;
-      }
-
-      // 3. AI Screening Filter
-      if (poolScreeningFilter !== 'all') {
-        const hasScore = candidate.agentScore !== undefined;
-        if (poolScreeningFilter === 'unscreened' && hasScore) return false;
-        if (poolScreeningFilter === 'screened' && !hasScore) return false;
-      }
-
-      return true;
+  // Filtered candidate list for selection based entirely on required skills
+  const evaluationTargets = useMemo(() => {
+    if (targetSkills.length === 0) return [];
+    let results = [...masterLeads];
+    results = results.filter(p => {
+      const skillsStr = extractSkillsList(p).toLowerCase();
+      return targetSkills.every(skill => skillsStr.includes(skill.toLowerCase()));
     });
-  }, [masterLeads, poolSearch, poolStatusFilter, poolScreeningFilter]);
+    return results.map((candidate) => ({ candidate, idx: masterLeads.indexOf(candidate) }));
+  }, [masterLeads, targetSkills]);
 
   // Running states
   const [isRunning, setIsRunning] = useState(false);
@@ -54,6 +36,12 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
   const [agentLogs, setAgentLogs] = useState([]); // Array of log messages for current run
   const [agentResults, setAgentResults] = useState({}); // candidateUrl -> { score, reasoning, logs }
   const [viewingReasoning, setViewingReasoning] = useState(null); // Candidate object being viewed
+
+
+
+  // Pagination for results
+  const RESULTS_PAGE_SIZE = 10;
+  const [resultsPage, setResultsPage] = useState(1);
 
   const consoleEndRef = useRef(null);
 
@@ -81,27 +69,7 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
     alert('Agent configuration saved successfully!');
   };
 
-  // Toggle selection for candidates
-  const toggleCandidateSelection = (candidateId) => {
-    setSelectedCandidateIds(prev => 
-      prev.includes(candidateId) 
-        ? prev.filter(id => id !== candidateId) 
-        : [...prev, candidateId]
-    );
-  };
 
-  const handleSelectAll = () => {
-    const filteredIndexes = filteredPool.map(item => item.idx);
-    const allSelected = filteredIndexes.every(idx => selectedCandidateIds.includes(idx));
-    
-    if (allSelected) {
-      // Deselect only the filtered items
-      setSelectedCandidateIds(prev => prev.filter(idx => !filteredIndexes.includes(idx)));
-    } else {
-      // Select all filtered items (merge with existing selections)
-      setSelectedCandidateIds(prev => [...new Set([...prev, ...filteredIndexes])]);
-    }
-  };
 
   // Run the agent on selected candidates
   const handleRunAgent = async (e) => {
@@ -111,19 +79,20 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
       alert("Please provide a valid Groq API Key in Settings to proceed.");
       return;
     }
-    if (selectedCandidateIds.length === 0) {
-      alert("Please select at least one candidate to screen.");
+    if (evaluationTargets.length === 0) {
+      alert("Please select at least one target skill to find matching candidates to screen.");
       return;
     }
 
     setIsRunning(true);
+    setViewMode('results');
     setAgentLogs([]);
     const newResults = { ...agentResults };
 
-    // Loop through each selected candidate sequentially
-    for (let i = 0; i < selectedCandidateIds.length; i++) {
-      const idx = selectedCandidateIds[i];
-      const candidate = masterLeads[idx];
+    // Loop through each targeted candidate sequentially
+    for (let i = 0; i < evaluationTargets.length; i++) {
+      const idx = evaluationTargets[i].idx;
+      const candidate = evaluationTargets[i].candidate;
       const candUrl = candidate.linkedinUrl || candidate.url || `candidate-${idx}`;
 
       setCurrentRunningIndex(idx);
@@ -286,9 +255,6 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
           <h1 style={{ margin: '0 0 4px', fontSize: '24px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
             Autonomous AI Agent Screener
           </h1>
-          <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
-            Powered by Groq. Watch a true ReAct agent plan, call tools, analyze files, and grade candidates live.
-          </p>
         </div>
         
         {Object.keys(agentResults).length > 0 && (
@@ -313,337 +279,306 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
         )}
       </div>
 
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', 
-        gap: '24px', 
-        alignItems: 'start' 
-      }}>
-        
-        {/* Left Column: Config, Target requirements, and Candidate Selection */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          
-          {/* Card 1: Configuration */}
-          <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>Model Setup</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end' }}>
+      {viewMode === 'setup' ? (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '40px' }}>
+          <div style={{ width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* Unified Agent Configuration Card */}
+            <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
-                    Reasoning Engine Model
+                  <h2 style={{ fontSize: '18px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>Agent Setup</h2>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>Configure the model, requirements, and target skills</p>
+                </div>
+                <button 
+                  onClick={handleSaveConfig}
+                  style={{
+                    padding: '8px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)',
+                    borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500'
+                  }}
+                >
+                  Save Preset
+                </button>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                    Model
                   </label>
                   <select 
                     value={selectedModel} 
                     onChange={e => setSelectedModel(e.target.value)} 
                     style={{
-                      width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border-color)',
-                      fontSize: '13px', color: 'var(--text-primary)', outline: 'none', backgroundColor: 'var(--bg-main)'
+                      width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--border-color)',
+                      fontSize: '14px', color: 'var(--text-primary)', outline: 'none', backgroundColor: 'var(--bg-surface)'
                     }}
                   >
-                    <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Recommended - High reasoning)</option>
-                    <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Fastest & high limits)</option>
-                    <option value="gemma2-9b-it">gemma2-9b-it (Efficient generalist)</option>
-                    <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 (High quality MoE)</option>
+                    <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Rec)</option>
+                    <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Fast)</option>
+                    <option value="gemma2-9b-it">gemma2-9b-it</option>
+                    <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
                   </select>
                 </div>
-                <button 
-                  onClick={handleSaveConfig}
-                  style={{
-                    padding: '10px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)',
-                    borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
-                  }}
-                >
-                  Save Config
-                </button>
-              </div>
-            </div>
-          </div>
 
-          {/* Card 2: Screening Target */}
-          <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>Screening Requirements</h2>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <button type="button" onClick={() => loadTemplate('ASIC DV')} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', backgroundColor: 'var(--bg-main)', cursor: 'pointer' }}>DV</button>
-                <button type="button" onClick={() => loadTemplate('DFT')} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', backgroundColor: 'var(--bg-main)', cursor: 'pointer' }}>DFT</button>
-                <button type="button" onClick={() => loadTemplate('Physical Design')} style={{ padding: '3px 8px', fontSize: '11px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', backgroundColor: 'var(--bg-main)', cursor: 'pointer' }}>PD</button>
-              </div>
-            </div>
-            
-            <textarea
-              value={jobDescription}
-              onChange={e => setJobDescription(e.target.value)}
-              placeholder="Describe the candidate requirements, skills, and target experience..."
-              rows={6}
-              style={{
-                width: '100%', padding: '12px', boxSizing: 'border-box', borderRadius: '6px',
-                border: '1px solid var(--border-color)', fontSize: '13px', color: 'var(--text-primary)', lineHeight: '1.5',
-                outline: 'none', fontFamily: 'monospace', resize: 'vertical', backgroundColor: 'var(--bg-main)'
-              }}
-            />
-          </div>
-
-          {/* Card 3: Candidate Pool Selection */}
-          <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>Candidate Pool</h2>
-                <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>Select targets for autonomous evaluation</p>
-              </div>
-              {masterLeads.length > 0 && (
-                <button 
-                  type="button" 
-                  onClick={handleSelectAll}
-                  style={{
-                    padding: '4px 10px', fontSize: '11px', border: '1px solid var(--border-color)',
-                    borderRadius: '4px', backgroundColor: 'var(--bg-main)', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: '600'
-                  }}
-                >
-                  {filteredPool.length > 0 && filteredPool.map(item => item.idx).every(idx => selectedCandidateIds.includes(idx)) ? 'Deselect Filtered' : 'Select Filtered'}
-                </button>
-              )}
-            </div>
-
-            {/* Search and Filters for Candidate Pool */}
-            {masterLeads.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
-                <input
-                  type="text"
-                  placeholder="Search candidate name or title..."
-                  value={poolSearch}
-                  onChange={e => setPoolSearch(e.target.value)}
-                  style={{
-                    width: '100%', padding: '8px 12px', boxSizing: 'border-box',
-                    borderRadius: '6px', border: '1px solid var(--border-color)',
-                    fontSize: '12px', color: 'var(--text-primary)', backgroundColor: 'var(--bg-main)',
-                    outline: 'none'
-                  }}
-                />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <select
-                    value={poolStatusFilter}
-                    onChange={e => setPoolStatusFilter(e.target.value)}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                      Role Requirements Prompt
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button type="button" onClick={() => loadTemplate('ASIC DV')} style={{ padding: '4px 8px', fontSize: '11px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', cursor: 'pointer' }}>Load DV</button>
+                      <button type="button" onClick={() => loadTemplate('DFT')} style={{ padding: '4px 8px', fontSize: '11px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', cursor: 'pointer' }}>Load DFT</button>
+                      <button type="button" onClick={() => loadTemplate('Physical Design')} style={{ padding: '4px 8px', fontSize: '11px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', cursor: 'pointer' }}>Load PD</button>
+                    </div>
+                  </div>
+                  <textarea
+                    value={jobDescription}
+                    onChange={e => setJobDescription(e.target.value)}
+                    placeholder="Describe the candidate requirements..."
+                    rows={6}
                     style={{
-                      width: '100%', padding: '7px 8px', borderRadius: '6px', border: '1px solid var(--border-color)',
-                      fontSize: '11px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-main)',
-                      outline: 'none', cursor: 'pointer'
+                      width: '100%', padding: '12px', boxSizing: 'border-box', borderRadius: '6px',
+                      border: '1px solid var(--border-color)', fontSize: '13px', color: 'var(--text-primary)', lineHeight: '1.5',
+                      outline: 'none', fontFamily: 'monospace', resize: 'vertical', backgroundColor: 'var(--bg-surface)'
                     }}
-                  >
-                    <option value="all">All Stages</option>
-                    <option value="sourced">Sourced</option>
-                    <option value="reached_out">Reached Out</option>
-                    <option value="interviewing">Interviewing</option>
-                    <option value="offer">Offer Extended</option>
-                    <option value="hired">Hired</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                  <select
-                    value={poolScreeningFilter}
-                    onChange={e => setPoolScreeningFilter(e.target.value)}
-                    style={{
-                      width: '100%', padding: '7px 8px', borderRadius: '6px', border: '1px solid var(--border-color)',
-                      fontSize: '11px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-main)',
-                      outline: 'none', cursor: 'pointer'
-                    }}
-                  >
-                    <option value="all">All AI Grades</option>
-                    <option value="unscreened">Not Screened Yet</option>
-                    <option value="screened">Screened by Agent</option>
-                  </select>
+                  />
                 </div>
-              </div>
-            )}
 
-            {masterLeads.length > 0 && (
-              <button
-                onClick={handleRunAgent}
-                disabled={isRunning || selectedCandidateIds.length === 0}
-                style={{
-                  width: '100%', marginBottom: '16px', padding: '12px',
-                  backgroundColor: isRunning ? 'var(--border-color)' : selectedCandidateIds.length === 0 ? 'var(--bg-surface)' : 'var(--accent)',
-                  color: selectedCandidateIds.length === 0 && !isRunning ? 'var(--text-secondary)' : 'var(--accent-fg)',
-                  border: selectedCandidateIds.length === 0 ? '1px solid var(--border-color)' : 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '500',
-                  cursor: isRunning || selectedCandidateIds.length === 0 ? 'not-allowed' : 'pointer',
-                  transition: 'background-color 0.2s'
-                }}
-              >
-                {isRunning ? 'Agent Executing Loop...' : `Launch Agent on ${selectedCandidateIds.length} Candidate(s)`}
-              </button>
-            )}
-
-            {masterLeads.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                No candidates available. Please run a scrape search first!
-              </div>
-            ) : filteredPool.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic' }}>
-                No candidates match the active search/filters.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxH: '260px', overflowY: 'auto', paddingRight: '4px' }}>
-                {filteredPool.map(({ candidate, idx }) => {
-                  const isSelected = selectedCandidateIds.includes(idx);
-                  const isCurrent = currentRunningIndex === idx;
-                  const candUrl = candidate.linkedinUrl || candidate.url || `candidate-${idx}`;
-                  const result = agentResults[candUrl];
-
-                  return (
-                    <div 
-                      key={idx} 
-                      onClick={() => !isRunning && toggleCandidateSelection(idx)}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                    Required Skills (Filter)
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                    {targetSkills.map(skill => (
+                      <span key={skill} style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 10px', borderRadius: '6px', fontSize: '13px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                        {skill}
+                        <button onClick={() => setTargetSkills(prev => prev.filter(s => s !== skill))} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', marginLeft: '8px', padding: 0, fontSize: '14px', lineHeight: '1' }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
+                    <select
+                      value={selectedCategory}
+                      onChange={e => setSelectedCategory(e.target.value)}
                       style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '10px 14px', borderRadius: '8px', border: isCurrent ? '1.5px solid var(--accent)' : '1px solid var(--border-color)',
-                        backgroundColor: isCurrent ? 'rgba(0, 229, 255, 0.1)' : isSelected ? 'var(--bg-main)' : 'var(--bg-surface)',
-                        cursor: isRunning ? 'not-allowed' : 'pointer',
-                        transition: 'all 0.15s ease'
+                        width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)',
+                        fontSize: '13px', color: 'var(--text-primary)', outline: 'none', backgroundColor: 'var(--bg-surface)'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={isRunning}
-                          onChange={() => {}} // handled by div onClick
-                          style={{ cursor: isRunning ? 'not-allowed' : 'pointer' }}
-                        />
-                        <div style={{ minWidth: 0 }}>
-                          <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                            {candidate.firstName || 'Unknown'} {candidate.lastName || ''}
-                          </span>
-                          <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {candidate.currentTitle || candidate.jobTitle || candidate.headline}
-                          </p>
-                        </div>
-                      </div>
+                      <option value="All">All Categories</option>
+                      {Object.keys(ASIC_SKILLS_CATEGORIZED).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val && !targetSkills.includes(val)) {
+                          setTargetSkills(prev => [...prev, val]);
+                        }
+                      }}
+                      style={{
+                        width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)',
+                        fontSize: '13px', color: 'var(--text-primary)', outline: 'none', backgroundColor: 'var(--bg-surface)'
+                      }}
+                    >
+                      <option value="" disabled>Add a required skill...</option>
+                      {(selectedCategory === 'All' ? ASIC_SKILLS : ASIC_SKILLS_CATEGORIZED[selectedCategory]).filter(s => !targetSkills.includes(s)).map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                        {isCurrent && <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: '700', animation: 'pulse 1.5s infinite' }}>THINKING</span>}
-                        {result && (
-                          <span style={{
-                            fontSize: '11px', fontWeight: '600',
-                            backgroundColor: 'var(--bg-main)',
-                            color: 'var(--text-primary)',
-                            border: '1px solid var(--border-color)',
-                            padding: '2px 6px', borderRadius: '4px'
-                          }}>
-                            {result.score}/100
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                <div style={{ marginTop: '12px', paddingTop: '24px', borderTop: '1px solid var(--border-color)' }}>
+                  <p style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                    {targetSkills.length === 0 
+                      ? "Select at least one required skill to find candidates."
+                      : <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{evaluationTargets.length} candidates found matching all required skills.</span>}
+                  </p>
+
+                  <button
+                    onClick={handleRunAgent}
+                    disabled={isRunning || evaluationTargets.length === 0}
+                    style={{
+                      width: '100%', padding: '16px',
+                      backgroundColor: isRunning ? 'var(--border-color)' : evaluationTargets.length === 0 ? 'var(--bg-surface)' : 'var(--accent)',
+                      color: evaluationTargets.length === 0 && !isRunning ? 'var(--text-secondary)' : 'var(--accent-fg)',
+                      border: evaluationTargets.length === 0 ? '1px solid var(--border-color)' : 'none', borderRadius: '8px', fontSize: '15px', fontWeight: '600',
+                      cursor: isRunning || evaluationTargets.length === 0 ? 'not-allowed' : 'pointer',
+                      transition: 'background-color 0.2s, transform 0.1s',
+                      boxShadow: evaluationTargets.length > 0 && !isRunning ? '0 4px 14px 0 rgba(0,229,255,0.39)' : 'none'
+                    }}
+                  >
+                    Launch Autonomous Evaluation
+                  </button>
+                </div>
               </div>
-            )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <button 
+              onClick={() => {
+                if (!isRunning) {
+                  setViewMode('setup');
+                } else {
+                  if (window.confirm("Agent is currently running. Going back will not stop it, but you will leave this view. Continue?")) {
+                    setViewMode('setup');
+                  }
+                }
+              }} 
+              style={{ padding: '8px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+              Back to Setup
+            </button>
           </div>
 
-        </div>
-
-        {/* Right Column: The Real-time Terminal Log & Scorecards */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          
-          {/* Card 4: Agent Terminal (Logs) */}
-          <div style={{ backgroundColor: '#000000', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '340px', overflow: 'hidden' }}>
-            {/* Terminal Top bar */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #333333', backgroundColor: '#111111' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444' }} />
-                <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
-                <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                <span style={{ color: '#a1a1aa', fontSize: '11px', fontFamily: 'monospace', fontWeight: '600', marginLeft: '8px' }}>agent@silicon-patterns-screener:~</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1fr) minmax(350px, 450px)', gap: '24px', alignItems: 'start' }}>
+            
+            {/* Card 4: Agent Terminal (Logs) */}
+            <div style={{ backgroundColor: '#000000', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '540px', overflow: 'hidden' }}>
+              {/* Terminal Top bar */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #333333', backgroundColor: '#111111' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444' }} />
+                  <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+                  <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                  <span style={{ color: '#a1a1aa', fontSize: '11px', fontFamily: 'monospace', fontWeight: '600', marginLeft: '8px' }}>agent@silicon-patterns-screener:~</span>
+                </div>
+                <span style={{ fontSize: '10px', color: '#a1a1aa', fontFamily: 'monospace' }}>REACT ENGINE ACTIVE</span>
               </div>
-              <span style={{ fontSize: '10px', color: '#a1a1aa', fontFamily: 'monospace' }}>REACT ENGINE ACTIVE</span>
+
+              {/* Terminal Body */}
+              <div style={{ flex: 1, padding: '14px 18px', overflowY: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '12px', lineHeight: '1.6', color: '#ededed', backgroundColor: '#000000' }}>
+                {agentLogs.length === 0 ? (
+                  <div style={{ color: 'var(--text-secondary)', textAlign: 'center', paddingTop: '100px' }}>
+                    &gt; Launch the agent to monitor live reasoning, decision planning, and local tool execution logs in this terminal.
+                  </div>
+                ) : (
+                  agentLogs.map((log, index) => {
+                    let color = '#f3f4f6';
+                    let fontWeight = 'normal';
+
+                    if (log.type === 'start') { color = '#3b82f6'; fontWeight = 'bold'; }
+                    else if (log.type === 'thought') { color = '#c084fc'; }
+                    else if (log.type === 'tool') { color = '#f59e0b'; }
+                    else if (log.type === 'observation') { color = '#10b981'; }
+                    else if (log.type === 'warning') { color = '#f59e0b'; }
+                    else if (log.type === 'error') { color = '#ef4444'; fontWeight = 'bold'; }
+                    else if (log.type === 'final') { color = '#10b981'; fontWeight = 'bold'; }
+                    else if (log.type === 'system') { color = 'var(--text-secondary)'; }
+
+                    return (
+                      <div key={index} style={{ color, fontWeight, whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginBottom: '8px' }}>
+                        {log.text}
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={consoleEndRef} />
+              </div>
             </div>
 
-            {/* Terminal Body */}
-            <div style={{ flex: 1, padding: '14px 18px', overflowY: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '12px', lineHeight: '1.6', color: '#ededed', backgroundColor: '#000000' }}>
-              {agentLogs.length === 0 ? (
-                <div style={{ color: 'var(--text-secondary)', textAlign: 'center', paddingTop: '100px' }}>
-                  &gt; Launch the agent to monitor live reasoning, decision planning, and local tool execution logs in this terminal.
+            {/* Card 5: Evaluation Leaderboard & Scorecards */}
+            <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px', height: '540px', display: 'flex', flexDirection: 'column' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>Evaluation Leaderboard</h2>
+
+              {Object.keys(agentResults).length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: '13px', flex: 1 }}>
+                  No evaluation records generated yet. Runs will appear here dynamically.
                 </div>
               ) : (
-                agentLogs.map((log, index) => {
-                  let color = '#f3f4f6';
-                  let fontWeight = 'normal';
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
+                  {(() => {
+                    const resultEntries = masterLeads.map((candidate, idx) => {
+                      const candUrl = candidate.linkedinUrl || candidate.url || `candidate-${idx}`;
+                      const result = agentResults[candUrl];
+                      if (!result) return null;
+                      return { candidate, idx, result };
+                    }).filter(Boolean).sort((a, b) => b.result.score - a.result.score);
 
-                  if (log.type === 'start') { color = '#3b82f6'; fontWeight = 'bold'; }
-                  else if (log.type === 'thought') { color = '#c084fc'; }
-                  else if (log.type === 'tool') { color = '#f59e0b'; }
-                  else if (log.type === 'observation') { color = '#10b981'; }
-                  else if (log.type === 'warning') { color = '#f59e0b'; }
-                  else if (log.type === 'error') { color = '#ef4444'; fontWeight = 'bold'; }
-                  else if (log.type === 'final') { color = '#10b981'; fontWeight = 'bold'; }
-                  else if (log.type === 'system') { color = 'var(--text-secondary)'; }
+                    const resultsTotalPages = Math.max(1, Math.ceil(resultEntries.length / RESULTS_PAGE_SIZE));
+                    const safeResultsPage = Math.min(resultsPage, resultsTotalPages);
+                    const paginatedResults = resultEntries.slice(
+                      (safeResultsPage - 1) * RESULTS_PAGE_SIZE,
+                      safeResultsPage * RESULTS_PAGE_SIZE
+                    );
 
-                  return (
-                    <div key={index} style={{ color, fontWeight, whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginBottom: '8px' }}>
-                      {log.text}
-                    </div>
-                  );
-                })
+                    return (
+                      <>
+                        {paginatedResults.map(({ candidate, idx, result }) => (
+                      <div key={idx} style={{ padding: '12px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ minWidth: 0, flex: 1, marginRight: '16px' }}>
+                          <h4 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {candidate.firstName || 'Unknown'} {candidate.lastName || ''}
+                          </h4>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <button 
+                              onClick={() => navigate('/candidates', { state: { highlightCandidateUrl: candidate.linkedinUrl || candidate.url || `candidate-${idx}` } })}
+                              style={{ padding: 0, background: 'none', border: 'none', color: 'var(--accent)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+                            >
+                              View in Talent Pool
+                            </button>
+                            <button 
+                              onClick={() => setViewingReasoning({ candidate, result })}
+                              style={{ padding: 0, background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+                            >
+                              Show Reasoning
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                          <span style={{ fontSize: '20px', fontWeight: '700', color: result.score >= 80 ? '#10b981' : result.score >= 60 ? '#f59e0b' : '#ef4444' }}>
+                            {result.score}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>/ 100</span>
+                        </div>
+                      </div>
+                    ))}
+
+                        {/* Leaderboard Pagination */}
+                        {resultEntries.length > RESULTS_PAGE_SIZE && (
+                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', paddingTop: '8px', borderTop: '1px solid var(--border-color)', marginTop: 'auto' }}>
+                            <button
+                              onClick={() => setResultsPage(p => Math.max(1, p - 1))}
+                              disabled={safeResultsPage === 1}
+                              style={{
+                                padding: '4px 10px', border: '1px solid var(--border-color)', borderRadius: '4px',
+                                backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
+                                cursor: safeResultsPage === 1 ? 'not-allowed' : 'pointer', fontSize: '11px',
+                                opacity: safeResultsPage === 1 ? 0.4 : 1,
+                              }}
+                            >← Prev</button>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                              {safeResultsPage} / {resultsTotalPages} ({resultEntries.length} results)
+                            </span>
+                            <button
+                              onClick={() => setResultsPage(p => Math.min(resultsTotalPages, p + 1))}
+                              disabled={safeResultsPage === resultsTotalPages}
+                              style={{
+                                padding: '4px 10px', border: '1px solid var(--border-color)', borderRadius: '4px',
+                                backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
+                                cursor: safeResultsPage === resultsTotalPages ? 'not-allowed' : 'pointer', fontSize: '11px',
+                                opacity: safeResultsPage === resultsTotalPages ? 0.4 : 1,
+                              }}
+                            >Next →</button>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
               )}
-              <div ref={consoleEndRef} />
             </div>
+
           </div>
-
-          {/* Card 5: Screening Results & Scorecards */}
-          <div style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '24px' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 16px', color: 'var(--text-primary)' }}>Screening Results</h2>
-
-            {Object.keys(agentResults).length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                No evaluation records generated yet. Runs will appear here dynamically.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {masterLeads.map((candidate, idx) => {
-                  const candUrl = candidate.linkedinUrl || candidate.url || `candidate-${idx}`;
-                  const result = agentResults[candUrl];
-                  if (!result) return null;
-
-                  return (
-                    <div key={idx} style={{ padding: '12px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ minWidth: 0, flex: 1, marginRight: '16px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                          {candidate.firstName} {candidate.lastName}
-                        </span>
-                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {result.reasoning.substring(0, 100)}...
-                        </p>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-                        <span style={{
-                          fontSize: '12px', fontWeight: '600',
-                          backgroundColor: 'var(--bg-surface)',
-                          color: 'var(--text-primary)',
-                          border: '1px solid var(--border-color)',
-                          padding: '4px 8px', borderRadius: '5px'
-                        }}>
-                          {result.score}
-                        </span>
-                        <button 
-                          onClick={() => setViewingReasoning({ candidate, result })}
-                          style={{
-                            padding: '6px 12px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)',
-                            borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', color: 'var(--text-primary)'
-                          }}
-                        >
-                          View Reasoning
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
         </div>
-
-      </div>
+      )}
 
       {/* Modal for detailed agent reasoning */}
       {viewingReasoning && (

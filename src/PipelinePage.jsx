@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const PIPELINE_STAGES = [
@@ -13,6 +13,7 @@ const PIPELINE_STAGES = [
 export default function PipelinePage({ masterLeads, setMasterLeads }) {
   const navigate = useNavigate();
   const [viewingReasoning, setViewingReasoning] = useState(null);
+  const [pipelineSearch, setPipelineSearch] = useState('');
 
   // Helper to get candidate status (default to 'sourced')
   const getCandidateStatus = (candidate) => {
@@ -41,9 +42,55 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
     moveCandidate(candidate, e.target.value);
   };
 
+  // Drag and Drop Handlers
+  const handleDragStart = (e, candidate) => {
+    e.dataTransfer.setData('application/json', JSON.stringify({
+      url: candidate.linkedinUrl || candidate.url || '',
+      firstName: candidate.firstName,
+      lastName: candidate.lastName
+    }));
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault(); // Necessary to allow dropping
+    e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+  };
+
+  const handleDragLeave = (e) => {
+    e.currentTarget.style.backgroundColor = 'var(--bg-main)';
+  };
+
+  const handleDrop = (e, newStageId) => {
+    e.preventDefault();
+    e.currentTarget.style.backgroundColor = 'var(--bg-main)';
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('application/json'));
+      const candidateToMove = masterLeads.find(c => {
+         const cUrl = c.linkedinUrl || c.url || '';
+         return cUrl === data.url && c.firstName === data.firstName && c.lastName === data.lastName;
+      });
+      if (candidateToMove) {
+        moveCandidate(candidateToMove, newStageId);
+      }
+    } catch(err) {
+      console.error('Drop error:', err);
+    }
+  };
+
+  // Filter candidates by search query
+  const filteredLeads = useMemo(() => {
+    if (!pipelineSearch.trim()) return masterLeads;
+    const q = pipelineSearch.toLowerCase();
+    return masterLeads.filter(c => {
+      const name = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase();
+      const title = (c.currentTitle || c.jobTitle || c.headline || '').toLowerCase();
+      return name.includes(q) || title.includes(q);
+    });
+  }, [masterLeads, pipelineSearch]);
+
   // Group candidates by their current stage
   const groupedCandidates = PIPELINE_STAGES.reduce((groups, stage) => {
-    groups[stage.id] = masterLeads.filter(c => getCandidateStatus(c) === stage.id);
+    groups[stage.id] = filteredLeads.filter(c => getCandidateStatus(c) === stage.id);
     return groups;
   }, {});
 
@@ -57,45 +104,81 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
   }
 
   return (
-    <div style={{ padding: '28px 20px', maxWidth: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px', boxSizing: 'border-box' }}>
+    <div style={{ padding: '28px 20px', maxWidth: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box', height: 'calc(100vh - 0px)', overflow: 'hidden' }}>
       
-      {/* Page Header */}
-      <div>
-        <h1 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.02em', textAlign: 'left' }}>
-          Recruitment Pipeline Board
-        </h1>
-        <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'left' }}>
-          Monitor and update candidate interview progress through pipeline columns.
-        </p>
+      {/* Page Header + Search */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexShrink: 0, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', letterSpacing: '-0.02em', textAlign: 'left' }}>
+            Recruitment Pipeline Board
+          </h1>
+          <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'left' }}>
+            {pipelineSearch ? `Showing matches for "${pipelineSearch}" · ` : ''}Monitor and update candidate interview progress through pipeline columns.
+          </p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ position: 'relative' }}>
+            <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </span>
+            <input
+              type="text"
+              placeholder="Search by name or title..."
+              value={pipelineSearch}
+              onChange={e => setPipelineSearch(e.target.value)}
+              style={{
+                padding: '8px 12px 8px 32px', borderRadius: '6px', border: '1px solid var(--border-color)',
+                fontSize: '13px', color: 'var(--text-primary)', outline: 'none', backgroundColor: 'var(--bg-main)',
+                width: '240px', boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          {pipelineSearch && (
+            <button
+              onClick={() => setPipelineSearch('')}
+              style={{
+                padding: '6px 12px', border: '1px solid var(--border-color)', borderRadius: '6px',
+                backgroundColor: 'var(--bg-surface)', color: 'var(--text-secondary)',
+                cursor: 'pointer', fontSize: '12px', fontWeight: '500',
+              }}
+            >Clear</button>
+          )}
+        </div>
       </div>
 
       {/* Kanban Board Container */}
       <div style={{ 
         display: 'grid', 
-        gridTemplateColumns: 'repeat(6, minmax(220px, 1fr))', 
-        gap: '16px', 
+        gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', 
+        gap: '12px', 
         overflowX: 'auto', 
-        paddingBottom: '16px',
+        paddingBottom: '8px',
         alignItems: 'start',
-        minHeight: '70vh'
+        flex: 1,
+        minHeight: 0,
       }}>
         {PIPELINE_STAGES.map(stage => {
           const candidatesInStage = groupedCandidates[stage.id] || [];
 
           return (
-            <div 
-              key={stage.id} 
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '8px',
-                padding: '12px',
-                minHeight: '500px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px',
-              }}
-            >
+              <div 
+                key={stage.id} 
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, stage.id)}
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: '100%',
+                  maxHeight: 'calc(100vh - 160px)',
+                  overflow: 'hidden',
+                  transition: 'background-color 0.2s',
+                }}
+              >
               {/* Column Header */}
               <div style={{ 
                 display: 'flex', 
@@ -119,8 +202,8 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                 </span>
               </div>
 
-              {/* Column Cards Container */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flexGrow: 1 }}>
+              {/* Column Cards Container — scrolls internally */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, minHeight: 0, paddingRight: '2px' }}>
                 {candidatesInStage.length === 0 ? (
                   <div style={{ 
                     padding: '24px 10px', 
@@ -146,6 +229,8 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                     return (
                       <div 
                         key={cardIdx}
+                        draggable={true}
+                        onDragStart={(e) => handleDragStart(e, candidate)}
                         style={{
                           backgroundColor: 'var(--bg-surface)',
                           border: '1px solid var(--border-color)',
@@ -154,8 +239,8 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '8px',
-                          transition: 'border-color 0.15s',
-                          cursor: 'default'
+                          transition: 'all 0.15s',
+                          cursor: 'grab'
                         }}
                         onMouseEnter={e => {
                           e.currentTarget.style.borderColor = 'var(--border-hover)';

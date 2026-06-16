@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import CandidatesPage from './CandidatesPage.jsx';
 import AIAgentPage from './AIAgentPage.jsx';
 import PipelinePage from './PipelinePage.jsx';
+import AnalyticsPage from './AnalyticsPage.jsx';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
 import logo from './assets/logo.png';
 
 const DEFAULT_APIFY_TOKEN = import.meta.env.VITE_APIFY_API_TOKEN || '';
 const ACTOR_NAME = 'harvestapi~linkedin-profile-search';
 
-function safeExtractText(field) {
+export function safeExtractText(field) {
   if (field === null || field === undefined) return 'N/A';
   if (typeof field === 'string') {
     const trimmed = field.trim();
@@ -64,6 +65,159 @@ export function isCandidateOpenToWork(profile) {
   return false;
 }
 
+const designationOptions = [
+  "Verification Engineer", "ASIC Design Engineer", "Physical Design Engineer",
+  "DFT Engineer", "SoC Architect", "Analog Design Engineer", "RTL Design Engineer"
+];
+const locationOptions = [
+  "Bengaluru", "Hyderabad", "Pune", "Noida", "Chennai", "Delhi NCR", "Mumbai", "Ahmedabad",
+  "San Jose", "San Francisco", "Austin", "Portland", "Phoenix", "Boston", "San Diego", "Dallas", "Seattle", "Raleigh", "New York",
+  "Hsinchu", "Taipei", "Seoul", "Tokyo", "Singapore",
+  "Munich", "Cambridge", "Eindhoven", "Dublin", "London", "Berlin", "Paris", "Stockholm",
+  "Haifa", "Tel Aviv",
+  "Toronto", "Vancouver",
+  "Remote", "India", "United States", "Europe", "Worldwide"
+];
+const companyOptions = [
+  "Intel", "AMD", "Qualcomm", "NVIDIA", "Apple", "Broadcom", "MediaTek", "Marvell", "Texas Instruments", "Arm"
+];
+const experienceOptions = [
+  { label: "Junior (1-2 years)", value: "2" },
+  { label: "Mid-Level (3-5 years)", value: "3" },
+  { label: "Senior (5-7 years)", value: "4" },
+  { label: "Lead/Staff (7-10+ years)", value: "5" },
+  { label: "Director/Exec (12+ years)", value: "6" }
+];
+
+function TagSelect({ options, selected, onChange, placeholder, allowCustom = true }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [inputValue, setInputValue] = useState('');
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setIsOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && inputValue.trim()) {
+      e.preventDefault();
+      if (allowCustom && !selected.includes(inputValue.trim())) {
+        onChange([...selected, inputValue.trim()]);
+      }
+      setInputValue('');
+      setIsOpen(false);
+    }
+  };
+
+  const toggleOption = (val) => {
+    if (selected.includes(val)) {
+      onChange(selected.filter(x => x !== val));
+    } else {
+      onChange([...selected, val]);
+    }
+  };
+
+  const removeTag = (val, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onChange(selected.filter(x => x !== val));
+  };
+
+  const getLabel = (val) => {
+    const opt = options.find(o => (typeof o === 'object' ? o.value === val : o === val));
+    return opt ? (typeof opt === 'object' ? opt.label : opt) : val;
+  };
+
+  const filteredOptions = options.filter(o => {
+    const label = typeof o === 'object' ? o.label : o;
+    const val = typeof o === 'object' ? o.value : o;
+    return label.toLowerCase().includes(inputValue.toLowerCase()) && !selected.includes(val);
+  });
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>
+      <div
+        onClick={() => setIsOpen(true)}
+        style={{
+          display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center',
+          backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)',
+          borderRadius: '6px', padding: '6px 12px', minHeight: '42px', cursor: 'text'
+        }}
+      >
+        {selected.map(val => (
+          <span key={val} style={{
+            display: 'flex', alignItems: 'center', gap: '4px',
+            backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
+            border: '1px solid var(--border-color)',
+            padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500'
+          }}>
+            {getLabel(val)}
+            <span onClick={(e) => removeTag(val, e)} style={{ cursor: 'pointer', fontWeight: 'bold', marginLeft: '4px', color: 'var(--text-secondary)' }}>×</span>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={inputValue}
+          onChange={e => { setInputValue(e.target.value); setIsOpen(true); }}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setIsOpen(true)}
+          placeholder={selected.length === 0 ? placeholder : ''}
+          style={{
+            border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-primary)',
+            fontSize: '13px', flex: 1, minWidth: '120px'
+          }}
+        />
+      </div>
+      {isOpen && (filteredOptions.length > 0 || (allowCustom && inputValue.trim())) && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)',
+          borderRadius: '6px', marginTop: '4px', maxHeight: '200px', overflowY: 'auto',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+        }}>
+          {filteredOptions.map(opt => {
+            const val = typeof opt === 'object' ? opt.value : opt;
+            const label = typeof opt === 'object' ? opt.label : opt;
+            return (
+              <div
+                key={val}
+                onClick={() => { toggleOption(val); setInputValue(''); }}
+                style={{
+                  padding: '8px 12px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-primary)',
+                  borderBottom: '1px solid var(--border-color)'
+                }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-main)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                {label}
+              </div>
+            );
+          })}
+          {allowCustom && inputValue.trim() && !options.some(o => (typeof o === 'object' ? o.label : o).toLowerCase() === inputValue.trim().toLowerCase()) && (
+            <div
+              onClick={() => {
+                if (!selected.includes(inputValue.trim())) onChange([...selected, inputValue.trim()]);
+                setInputValue('');
+              }}
+              style={{
+                padding: '8px 12px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent)', fontStyle: 'italic'
+              }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-main)'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              Add custom "{inputValue.trim()}"
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -106,21 +260,27 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
       </div>
 
       {/* Navigation Links */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px', paddingLeft: '8px' }}>Overview</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+        <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px', paddingLeft: '8px' }}>Workspace</div>
         {[
-          { label: 'Search', path: '/', active: isSearch },
-          { label: candidateCount > 0 ? `Candidates (${candidateCount})` : 'Candidates', path: '/candidates', active: isCandidates },
-          { label: 'AI Agent Screening', path: '/agent', active: location.pathname === '/agent' },
-          { label: 'Pipeline', path: '/pipeline', active: location.pathname === '/pipeline' },
-        ].map(({ label, path, active }) => (
+          { label: 'Discovery', path: '/', active: isSearch, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> },
+          { label: candidateCount > 0 ? `Talent Pool (${candidateCount})` : 'Talent Pool', path: '/candidates', active: isCandidates, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> },
+          { label: 'Evaluation', path: '/agent', active: location.pathname === '/agent', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> },
+          { label: 'Recruitment', path: '/pipeline', active: location.pathname === '/pipeline', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg> },
+          { label: 'Insights', path: '/analytics', active: location.pathname === '/analytics', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> }
+        ].map(({ label, path, active, icon }) => (
           <button key={path} onClick={() => navigate(path)} style={{
-            padding: '8px 12px', borderRadius: '6px', fontSize: '13px',
-            fontWeight: '500', border: 'none', cursor: 'pointer', textAlign: 'left',
-            backgroundColor: active ? 'var(--bg-surface)' : 'transparent',
-            color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-            transition: 'all 0.15s ease',
-          }}>
+            padding: '10px 12px', borderRadius: '8px', fontSize: '13px',
+            fontWeight: active ? '600' : '500', border: 'none', cursor: 'pointer', textAlign: 'left',
+            backgroundColor: active ? 'var(--accent)' : 'transparent',
+            color: active ? 'var(--accent-fg)' : 'var(--text-secondary)',
+            transition: 'all 0.15s ease', display: 'flex', alignItems: 'center', gap: '12px',
+            boxShadow: active ? '0 4px 12px rgba(0, 229, 255, 0.2)' : 'none'
+          }}
+          onMouseEnter={e => { if(!active) { e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.color = 'var(--text-primary)'; } }}
+          onMouseLeave={e => { if(!active) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; } }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: active ? 1 : 0.7 }}>{icon}</span>
             {label}
           </button>
         ))}
@@ -187,11 +347,11 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
 
 function SearchPage({ masterLeads, setMasterLeads }) {
   const navigate = useNavigate();
-  const [selectedSkills, setSelectedSkills] = useState(['UVM', 'SystemVerilog']);
-  const [companies, setCompanies] = useState('');
-  const [location, setLocation] = useState('Bengaluru');
-  const [designation, setDesignation] = useState('Verification Engineer');
-  const [experience, setExperience] = useState('3');
+  const [selectedSkills, setSelectedSkills] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [location, setLocation] = useState([]);
+  const [designation, setDesignation] = useState([]);
+  const [experience, setExperience] = useState([]);
   const [openToWork, setOpenToWork] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
@@ -234,24 +394,20 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         return `"${skill}"`;
       };
 
-      let finalQuery = `(${selectedSkills.map(expandSkillForQuery).join(' OR ')})`;
-      if (companies.trim() !== '') {
-        const compArr = companies.split(',').map(c => `"${c.trim()}"`).join(' OR ');
+      let finalQuery = `(${selectedSkills.map(expandSkillForQuery).join(' AND ')})`;
+      if (companies.length > 0) {
+        const compArr = companies.map(c => `"${c.trim()}"`).join(' OR ');
         finalQuery += ` AND (${compArr})`;
       }
       if (openToWork) finalQuery += ' AND ("Open to work" OR "#opentowork" OR "looking for")';
 
-      const designationTitles = designation.split(',').map(d => d.trim()).filter(Boolean);
-
-      const targetLocations = location.split(',').map(l => l.trim()).filter(Boolean);
-
       const searchInput = {
         searchQuery: finalQuery,
-        locations: targetLocations,
-        currentJobTitles: designationTitles,
-        ...(experience !== 'any' && { yearsOfExperienceIds: [experience] }),
+        ...(location.length > 0 && { locations: location }),
+        ...(designation.length > 0 && { currentJobTitles: designation }),
+        ...(experience.length > 0 && { yearsOfExperienceIds: experience }),
         profileScraperMode: "Full",
-        maxItems: 100
+        maxItems: 50
       };
 
       const currentApifyToken = localStorage.getItem('siliconPatternsApifyKey') || DEFAULT_APIFY_TOKEN;
@@ -317,9 +473,10 @@ function SearchPage({ masterLeads, setMasterLeads }) {
             isOpenToWork: profile.isOpenToWork,
             matchScore: null,
             status: 'sourced',
-            _searchedDesignation: designationTitles.join(', '),
-            _searchedLocation: location,
-            _searchedSkills: [...selectedSkills]
+            _searchedDesignation: designation.join(', '),
+            _searchedLocation: location.join(', '),
+            _searchedSkills: [...selectedSkills],
+            createdAt: new Date().toISOString()
           };
           newUniqueProfiles.push(prunedProfile);
           existingUrls.add(profileUrl);
@@ -379,26 +536,45 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           <div>
             <label style={labelStyle}>Core Competency Matrix</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) minmax(140px, 1fr) minmax(160px, auto)', gap: '12px', marginBottom: '12px' }}>
-              <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={inputStyle}>
+
+            {/* Selected skills as removable tags */}
+            {selectedSkills.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                {selectedSkills.map(skill => (
+                  <button key={skill} type="button" onClick={() => toggleSkill(skill)} style={{
+                    padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600',
+                    cursor: 'pointer', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '4px',
+                    border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)',
+                  }}>{skill} <span style={{ fontSize: '14px', lineHeight: 1 }}>×</span></button>
+                ))}
+                <button type="button" onClick={() => setSelectedSkills([])} style={{
+                  padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
+                  cursor: 'pointer', border: '1px solid rgba(248, 113, 113, 0.3)',
+                  backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171',
+                }}>Clear all</button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+              <select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setSkillFilter(''); }} style={{ ...inputStyle, width: '180px', flex: 'none' }}>
                 <option value="All">All Categories</option>
                 {Object.keys(ASIC_SKILLS_CATEGORIZED).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <input
                 type="text"
-                placeholder="Search category skills..."
+                placeholder="Type to search skills..."
                 value={skillFilter}
                 onChange={e => setSkillFilter(e.target.value)}
-                style={inputStyle}
+                style={{ ...inputStyle, flex: 1, minWidth: '200px' }}
               />
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flex: 'none' }}>
                 <input
                   type="text"
                   placeholder="Custom skill..."
                   value={customSkill}
                   onChange={e => setCustomSkill(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' ? (e.preventDefault(), handleAddCustomSkill()) : null}
-                  style={inputStyle}
+                  style={{ ...inputStyle, width: '140px' }}
                 />
                 <button type="button" onClick={handleAddCustomSkill} style={{
                   padding: '0 16px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none',
@@ -407,59 +583,100 @@ function SearchPage({ masterLeads, setMasterLeads }) {
               </div>
             </div>
 
-            <div style={{
-              display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '200px', overflowY: 'auto',
-              padding: '12px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px'
-            }}>
-              {selectedSkills.map(skill => (
-                <button key={skill} type="button" onClick={() => toggleSkill(skill)} style={{
-                  padding: '5px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: '500',
-                  cursor: 'pointer', transition: 'all 0.15s ease',
-                  border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)',
-                }}>{skill} ✕</button>
-              ))}
+            {/* Skill results */}
+            {(() => {
+              const unselectedSkills = filteredSkills.filter(s => !selectedSkills.includes(s));
+              const shouldShow = skillFilter.trim() || selectedCategory !== 'All';
 
-              {filteredSkills.filter(s => !selectedSkills.includes(s)).map(skill => (
-                <button key={skill} type="button" onClick={() => toggleSkill(skill)} style={{
-                  padding: '5px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: '500',
-                  cursor: 'pointer', transition: 'all 0.15s ease',
-                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
-                }}>{skill}</button>
-              ))}
-            </div>
+              if (!shouldShow) return null;
+
+              return (
+                <div style={{
+                  display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '160px', overflowY: 'auto',
+                  padding: '12px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px'
+                }}>
+                  {unselectedSkills.length === 0 ? (
+                    <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontStyle: 'italic', padding: '4px 0' }}>
+                      {skillFilter ? 'No skills match your search' : 'All skills in this category are selected'}
+                    </span>
+                  ) : (
+                    unselectedSkills.map(skill => (
+                      <button key={skill} type="button" onClick={() => toggleSkill(skill)} style={{
+                        padding: '4px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '500',
+                        cursor: 'pointer', transition: 'all 0.12s ease',
+                        border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
+                      }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                      >{skill}</button>
+                    ))
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div>
               <label style={labelStyle}>Designation(s) <span style={{ textTransform: 'none', fontWeight: '400', color: 'var(--text-secondary)' }}>(comma-separated)</span></label>
-              <input type="text" value={designation} onChange={e => setDesignation(e.target.value)} placeholder="e.g. Verification Engineer, ASIC Engineer" style={inputStyle} />
+              <TagSelect
+                options={designationOptions}
+                selected={designation}
+                onChange={setDesignation}
+                placeholder="e.g. Verification Engineer"
+              />
             </div>
             <div>
               <label style={labelStyle}>Experience Bracket</label>
-              <select value={experience} onChange={e => setExperience(e.target.value)} style={{ ...inputStyle }}>
-                <option value="any">Any Experience</option>
-                <option value="2">Junior (1-2 years)</option>
-                <option value="3">Mid-Level (3-5 years)</option>
-                <option value="4">Senior (5-7 years)</option>
-                <option value="5">Lead/Staff (7-10+ years)</option>
-              </select>
+              <TagSelect
+                options={experienceOptions}
+                selected={experience}
+                onChange={setExperience}
+                placeholder="Select experience levels"
+                allowCustom={false}
+              />
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div>
               <label style={labelStyle}>Target Location(s) (comma-separated)</label>
-              <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Bengaluru, Hyderabad" style={inputStyle} required />
+              <TagSelect
+                options={locationOptions}
+                selected={location}
+                onChange={setLocation}
+                placeholder="e.g. Bengaluru, Hyderabad"
+              />
             </div>
             <div>
               <label style={labelStyle}>Target Companies (Optional)</label>
-              <input type="text" value={companies} onChange={e => setCompanies(e.target.value)} placeholder="e.g. Intel, Qualcomm, AMD" style={inputStyle} />
+              <TagSelect
+                options={companyOptions}
+                selected={companies}
+                onChange={setCompanies}
+                placeholder="e.g. Intel, Qualcomm, AMD"
+              />
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 0' }}>
-            <input type="checkbox" id="openToWork" checked={openToWork} onChange={e => setOpenToWork(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
-            <label htmlFor="openToWork" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>Enforce "Open to Work" profile requirements</label>
+          <div
+            onClick={() => setOpenToWork(!openToWork)}
+            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', cursor: 'pointer', width: 'fit-content' }}
+          >
+            <div style={{
+              width: '36px', height: '20px', backgroundColor: openToWork ? 'var(--accent)' : 'var(--bg-surface)',
+              borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s',
+              border: `1px solid ${openToWork ? 'var(--accent)' : 'var(--border-color)'}`
+            }}>
+              <div style={{
+                width: '14px', height: '14px', backgroundColor: openToWork ? 'var(--accent-fg)' : 'var(--text-secondary)',
+                borderRadius: '50%', position: 'absolute', top: '2px', left: openToWork ? '18px' : '2px',
+                transition: 'all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+              }} />
+            </div>
+            <span style={{ fontSize: '13px', fontWeight: '500', color: openToWork ? 'var(--text-primary)' : 'var(--text-secondary)', userSelect: 'none', transition: 'color 0.2s' }}>
+              Open to Work
+            </span>
           </div>
 
           <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
@@ -707,7 +924,11 @@ export default function App() {
 
         // 4. Update state and config
         setMasterLeads(mergedLeads);
-        localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(mergedLeads));
+        try {
+          localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(mergedLeads));
+        } catch (e) {
+          console.warn("Local storage quota exceeded. Database sync continuing online.");
+        }
 
         localStorage.setItem('siliconPatternsDbMode', 'supabase');
         localStorage.setItem('siliconPatternsSupabaseUrl', inputUrl);
@@ -761,6 +982,7 @@ alter table candidates disable row level security;`;
           <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
           <Route path="/agent" element={<AIAgentPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
           <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+          <Route path="/analytics" element={<AnalyticsPage masterLeads={masterLeads} />} />
         </Routes>
       </div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
 import { isCandidateOpenToWork } from './App.jsx';
@@ -12,7 +12,7 @@ const STAGE_BADGES = {
   rejected: { label: 'Rejected', bg: 'rgba(220, 38, 38, 0.15)', text: '#f87171', border: 'rgba(248, 113, 113, 0.3)' }
 };
 
-function safeExtractText(field) {
+export function safeExtractText(field) {
   if (field === null || field === undefined) return 'N/A';
   if (typeof field === 'string') {
     const trimmed = field.trim();
@@ -40,7 +40,7 @@ function safeExtractText(field) {
   return String(field);
 }
 
-function extractSkillsList(profile) {
+export function extractSkillsList(profile) {
   if (!profile.skills) return '';
   if (Array.isArray(profile.skills)) {
     return profile.skills.map(s => typeof s === 'string' ? s : (s.name || s.title || '')).filter(Boolean).join(', ');
@@ -62,8 +62,6 @@ function CandidateCard({ profile, onRemove, isHighlighted }) {
   const skills = extractSkillsList(profile);
   const url = safeExtractText(profile.linkedinUrl || profile.url);
   const about = safeExtractText(profile.about || profile.summary);
-  const displayScore = (profile.agentScore !== undefined && profile.agentScore !== null) ? profile.agentScore : null;
-  const scoreColors = displayScore !== null ? getScoreColor(displayScore) : null;
 
   let experience = '';
   if (profile.positions && Array.isArray(profile.positions)) {
@@ -227,18 +225,6 @@ Generate the JSON outreach sequence now.`
                     OPEN TO WORK
                   </span>
                 )}
-                {profile.agentScore !== undefined && profile.agentScore !== null && (
-                  <span style={{
-                    fontSize: '10px', fontWeight: '600',
-                    backgroundColor: 'rgba(0, 229, 255, 0.15)',
-                    color: 'var(--accent)',
-                    border: '1px solid rgba(0, 229, 255, 0.3)',
-                    padding: '2px 7px', borderRadius: '10px',
-                    display: 'inline-flex', alignItems: 'center', gap: '4px'
-                  }}>
-                    AI Evaluated
-                  </span>
-                )}
               </div>
               <p style={{ margin: '3px 0 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {title}
@@ -249,18 +235,6 @@ Generate the JSON outreach sequence now.`
 
           {/* Score + Actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-            {displayScore !== null && (
-              <div style={{
-                backgroundColor: scoreColors.bg, color: scoreColors.text,
-                border: `1px solid ${scoreColors.border}`,
-                borderRadius: '6px', padding: '4px 10px',
-                fontSize: '13px', fontWeight: '600', letterSpacing: '-0.02em',
-                display: 'flex', alignItems: 'center', gap: '4px'
-              }} title="AI Screened Score">
-                
-                <span>{displayScore}</span>
-              </div>
-            )}
             {url && url !== 'N/A' && (
               <a href={url} target="_blank" rel="noopener noreferrer" style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -335,12 +309,6 @@ Generate the JSON outreach sequence now.`
             <div>
               <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Education</p>
               <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.6 }}>{education}</p>
-            </div>
-          )}
-          {profile.agentReasoning && (
-            <div style={{ borderLeft: '3px solid var(--accent)', paddingLeft: '12px', margin: '8px 0', backgroundColor: 'rgba(0, 229, 255, 0.05)', padding: '12px', borderRadius: '6px', border: '1px solid rgba(0, 229, 255, 0.15)' }}>
-              <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '600', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>AI Agent Reasoning</p>
-              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.6 }}>{profile.agentReasoning}</p>
             </div>
           )}
           {profile._searchedSkills && (
@@ -481,9 +449,24 @@ Generate the JSON outreach sequence now.`
   );
 }
 
+const ITEMS_PER_PAGE = 20;
+
 export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   const location = useLocation();
   const highlightedUrl = location.state?.highlightCandidateUrl || '';
+
+  useEffect(() => {
+    if (highlightedUrl) {
+      const target = masterLeads.find(c => {
+        const curl = (c.linkedinUrl || c.url || '').split('?')[0].toLowerCase().trim();
+        const turl = highlightedUrl.split('?')[0].toLowerCase().trim();
+        return curl === turl || curl === `candidate-${masterLeads.indexOf(c)}`;
+      });
+      if (target) {
+        setSearchText(`${safeExtractText(target.firstName)} ${safeExtractText(target.lastName)}`.trim());
+      }
+    }
+  }, [highlightedUrl, masterLeads]);
 
   // Filter state
   const [searchText, setSearchText] = useState('');
@@ -493,11 +476,15 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   
   const availableMasterSkills = selectedCategory === 'All' ? ASIC_SKILLS : ASIC_SKILLS_CATEGORIZED[selectedCategory];
   const filteredMasterSkills = availableMasterSkills.filter(s => s.toLowerCase().includes(skillFilterInput.toLowerCase()));
-  const [filterMinScore, setFilterMinScore] = useState(0);
   const [filterLocation, setFilterLocation] = useState('');
   const [filterOpenToWork, setFilterOpenToWork] = useState(false);
-  const [sortBy, setSortBy] = useState('score_desc');
+  const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'compact'
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  // Collapsible skill filter
+  const [showSkillFilter, setShowSkillFilter] = useState(false);
 
   const toggleFilterSkill = (skill) => {
     setFilterSkills(prev => prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]);
@@ -525,26 +512,46 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   };
 
   const downloadCSV = () => {
-    if (masterLeads.length === 0) return;
-    const headers = ['Match Score', 'First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience', 'Education', 'LinkedIn URL'];
-    const rows = masterLeads.map(p => {
-      const loc = safeExtractText(p.location).replace(/[\r\n,"]/g, ' ');
-      const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline).replace(/[\r\n,"]/g, ' ');
-      const skills = extractSkillsList(p).replace(/[\r\n,"]/g, ' ');
-      const about = safeExtractText(p.about || p.summary).replace(/[\r\n,"]/g, ' ');
+    if (filteredCandidates.length === 0) return;
+    const headers = ['Match Score', 'First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience Level', 'LinkedIn URL'];
+    
+    const escapeCsv = (str) => {
+      if (str === null || str === undefined) return '""';
+      const s = String(str);
+      return '"' + s.replace(/"/g, '""') + '"';
+    };
+
+    const getLevel = (title) => {
+      if (!title) return '';
+      const t = title.toLowerCase();
+      if (t.includes('chief') || t.includes('cto') || t.includes('ceo') || t.includes('cfo')) return 'C-Level';
+      if (t.includes('vp') || t.includes('vice president')) return 'VP';
+      if (t.includes('director')) return 'Director';
+      if (t.includes('manager')) return 'Manager';
+      if (t.includes('principal') || t.includes('architect')) return 'Principal/Architect';
+      if (t.includes('staff')) return 'Staff';
+      if (t.includes('senior') || t.includes('sr.') || t.includes('sr ')) return 'Senior';
+      if (t.includes('lead')) return 'Lead';
+      if (t.includes('junior') || t.includes('jr.') || t.includes('jr ')) return 'Junior';
+      return title; // fallback to title
+    };
+
+    const rows = filteredCandidates.map(p => {
+      const loc = safeExtractText(p.location);
+      const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
+      const skills = extractSkillsList(p);
+      const about = safeExtractText(p.about || p.summary);
       const url = safeExtractText(p.linkedinUrl || p.url);
 
       let exp = 'N/A';
-      if (p.positions && Array.isArray(p.positions)) exp = p.positions.map(e => `${e.title || ''} at ${e.companyName || ''}`).join(' | ');
-      else if (p.experience && Array.isArray(p.experience)) exp = p.experience.map(e => `${e.title || ''} at ${e.company || ''}`).join(' | ');
-      exp = exp.replace(/[\r\n,"]/g, ' ');
+      if (p.positions && Array.isArray(p.positions)) exp = p.positions.map(e => getLevel(e.title)).filter(Boolean).join(' | ');
+      else if (p.experience && Array.isArray(p.experience)) exp = p.experience.map(e => getLevel(e.title)).filter(Boolean).join(' | ');
 
-      let edu = 'N/A';
-      if (p.educations && Array.isArray(p.educations)) edu = p.educations.map(e => `${e.degreeName || ''} from ${e.schoolName || ''}`).join(' | ');
-      else if (p.education && Array.isArray(p.education)) edu = p.education.map(e => `${e.degreeName || ''} from ${e.schoolName || ''}`).join(' | ');
-      edu = edu.replace(/[\r\n,"]/g, ' ');
+      const score = p.agentScore !== undefined && p.agentScore !== null ? p.agentScore : 'N/A';
 
-      return `"${p.agentScore !== undefined && p.agentScore !== null ? p.agentScore : 'N/A'}","${safeExtractText(p.firstName)}","${safeExtractText(p.lastName)}","${title}","${loc}","${skills}","${about}","${exp}","${edu}","${url}"`;
+      return [score, safeExtractText(p.firstName), safeExtractText(p.lastName), title, loc, skills, about, exp, url]
+        .map(escapeCsv)
+        .join(',');
     });
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -591,45 +598,55 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       });
     }
 
-    const getEffectiveScore = (p) => (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : 0;
-
-    // Min score filter
-    if (filterMinScore > 0) {
-      results = results.filter(p => getEffectiveScore(p) >= filterMinScore);
-    }
-
     // Location filter
     if (filterLocation) {
-      results = results.filter(p => safeExtractText(p.location).toLowerCase().includes(filterLocation.toLowerCase()));
+      results = results.filter(p => {
+        const loc = safeExtractText(p.location).split(',')[0].trim();
+        return loc === filterLocation;
+      });
     }
 
-    // Open to work filter
+    // Open to Work filter
     if (filterOpenToWork) {
       results = results.filter(p => isCandidateOpenToWork(p));
     }
 
     // Sort
+    const getCreatedAt = (p) => p.createdAt ? new Date(p.createdAt).getTime() : 0;
     switch (sortBy) {
-      case 'score_desc': results.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a)); break;
-      case 'score_asc': results.sort((a, b) => getEffectiveScore(a) - getEffectiveScore(b)); break;
+      case 'newest': results.sort((a, b) => getCreatedAt(b) - getCreatedAt(a)); break;
+      case 'oldest': results.sort((a, b) => getCreatedAt(a) - getCreatedAt(b)); break;
       case 'name_asc': results.sort((a, b) => safeExtractText(a.lastName).localeCompare(safeExtractText(b.lastName))); break;
       case 'name_desc': results.sort((a, b) => safeExtractText(b.lastName).localeCompare(safeExtractText(a.lastName))); break;
       default: break;
     }
 
     return results;
-  }, [masterLeads, searchText, filterSkills, filterMinScore, filterLocation, filterOpenToWork, sortBy]);
+  }, [masterLeads, searchText, filterSkills, filterLocation, filterOpenToWork, sortBy]);
 
-  const hasActiveFilters = searchText || filterSkills.length > 0 || filterMinScore > 0 || filterLocation || filterOpenToWork;
+  // Pagination logic
+  const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / ITEMS_PER_PAGE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedCandidates = filteredCandidates.slice(
+    (safeCurrentPage - 1) * ITEMS_PER_PAGE,
+    safeCurrentPage * ITEMS_PER_PAGE
+  );
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchText, filterSkills, filterLocation, filterOpenToWork, sortBy]);
+
+  const hasActiveFilters = searchText || filterSkills.length > 0 || filterLocation || filterOpenToWork;
 
   const resetFilters = () => {
     setSearchText('');
     setFilterSkills([]);
-    setFilterMinScore(0);
     setFilterLocation('');
     setFilterOpenToWork(false);
     setSkillFilterInput('');
     setSelectedCategory('All');
+    setCurrentPage(1);
   };
 
   const inputStyle = {
@@ -649,7 +666,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   }
 
   return (
-    <div style={{ padding: '28px 20px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ padding: '28px 20px', maxWidth: '1400px', margin: '0 auto', height: 'calc(100vh - 0px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
 
       {/* Page Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
@@ -673,9 +690,9 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       </div>
 
       {/* Filter Panel */}
-      <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', marginBottom: '20px' }}>
+      <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '16px 20px', marginBottom: '16px', flexShrink: 0 }}>
         {/* Row 1: Search + Sort + View */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '12px', marginBottom: '16px', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '10px', alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
             <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -689,8 +706,8 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
             />
           </div>
           <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ ...inputStyle, width: 'auto', paddingRight: '28px' }}>
-            <option value="score_desc">Score: High → Low</option>
-            <option value="score_asc">Score: Low → High</option>
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
             <option value="name_asc">Name: A → Z</option>
             <option value="name_desc">Name: Z → A</option>
           </select>
@@ -705,169 +722,272 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
               }}>{icon}</button>
             ))}
           </div>
-        </div>
-
-        {/* Row 2: Location + Min Score + Open to Work + Reset */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: '12px', marginBottom: '16px', alignItems: 'center' }}>
-          <select value={filterLocation} onChange={e => setFilterLocation(e.target.value)} style={{ ...inputStyle, width: '100%' }}>
-            <option value="">All Locations</option>
-            {uniqueLocations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
-          </select>
-
-          <div>
-            <select value={filterMinScore} onChange={e => setFilterMinScore(Number(e.target.value))} style={{ ...inputStyle, width: '100%' }}>
-              <option value={0}>Any Score</option>
-              <option value={25}>25+ Score</option>
-              <option value={50}>50+ Score</option>
-              <option value={70}>70+ Score</option>
-              <option value={85}>85+ Score</option>
-            </select>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" id="filterOTW" checked={filterOpenToWork} onChange={e => setFilterOpenToWork(e.target.checked)}
-              style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
-            <label htmlFor="filterOTW" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>Open to Work</label>
-          </div>
-
           {hasActiveFilters && (
-            <button onClick={resetFilters} style={{ padding: '8px 14px', backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>
+            <button onClick={resetFilters} style={{ padding: '7px 14px', backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>
               Clear Filters
             </button>
           )}
         </div>
 
-        {/* Row 3: Skill chips */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
-            <p style={{ margin: 0, fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Filter by Skill (must have all selected)</p>
+        {/* Row 2: Location + Open to Work + Skill Filter Toggle */}
+        <div style={{ display: 'flex', gap: '10px', marginTop: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select value={filterLocation} onChange={e => setFilterLocation(e.target.value)} style={{ ...inputStyle, width: '180px', flex: 'none' }}>
+            <option value="">All Locations</option>
+            {uniqueLocations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+          </select>
+
+          <button
+            onClick={() => setShowSkillFilter(v => !v)}
+            style={{
+              ...inputStyle,
+              width: 'auto',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              border: filterSkills.length > 0 ? '1px solid var(--accent)' : '1px solid var(--border-color)',
+              color: filterSkills.length > 0 ? 'var(--accent)' : 'var(--text-primary)'
+            }}
+          >
+            Skills {filterSkills.length > 0 && `(${filterSkills.length})`}
+            {showSkillFilter ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            )}
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', whiteSpace: 'nowrap', marginLeft: '8px' }}>
+            <input type="checkbox" id="filterOTW" checked={filterOpenToWork} onChange={e => setFilterOpenToWork(e.target.checked)}
+              style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
+            <label htmlFor="filterOTW" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>Open to Work</label>
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} style={{ ...inputStyle, width: '200px' }}>
-              <option value="All">All Categories</option>
-              {Object.keys(ASIC_SKILLS_CATEGORIZED).map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <input
-              type="text"
-              placeholder="Search category skills..."
-              value={skillFilterInput}
-              onChange={e => setSkillFilterInput(e.target.value)}
-              style={{ ...inputStyle, flex: 1, maxWidth: '300px' }}
-            />
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '150px', overflowY: 'auto', padding: '10px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-            {filterSkills.map(skill => (
-                <button key={skill} onClick={() => toggleFilterSkill(skill)} style={{
-                  padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
-                  cursor: 'pointer', transition: 'all 0.15s',
-                  border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)',
-                }}>{skill} ✕</button>
-            ))}
-            {filteredMasterSkills.filter(s => !filterSkills.includes(s)).map(skill => (
-                <button key={skill} onClick={() => toggleFilterSkill(skill)} style={{
-                  padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
-                  cursor: 'pointer', transition: 'all 0.15s',
-                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
-                }}>{skill}</button>
-            ))}
-          </div>
+
         </div>
+
+        {/* Collapsible Skill Filter Panel */}
+        {showSkillFilter && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+            {/* Selected skills as removable tags */}
+            {filterSkills.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                {filterSkills.map(skill => (
+                  <button key={skill} onClick={() => toggleFilterSkill(skill)} style={{
+                    padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600',
+                    cursor: 'pointer', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '4px',
+                    border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)',
+                  }}>{skill} <span style={{ fontSize: '13px', lineHeight: 1 }}>×</span></button>
+                ))}
+                <button onClick={() => setFilterSkills([])} style={{
+                  padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '500',
+                  cursor: 'pointer', border: '1px solid rgba(248, 113, 113, 0.3)',
+                  backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171',
+                }}>Clear all</button>
+              </div>
+            )}
+
+            {/* Category + Search row */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setSkillFilterInput(''); }} style={{ ...inputStyle, width: '180px', flex: 'none' }}>
+                <option value="All">All Categories</option>
+                {Object.keys(ASIC_SKILLS_CATEGORIZED).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input
+                type="text"
+                placeholder="Type to search skills..."
+                value={skillFilterInput}
+                onChange={e => setSkillFilterInput(e.target.value)}
+                style={{ ...inputStyle, flex: 1, maxWidth: '320px' }}
+              />
+            </div>
+
+            {/* Skill results */}
+            {(() => {
+              const unselectedSkills = filteredMasterSkills.filter(s => !filterSkills.includes(s));
+              // Show skills if user is typing or selected a specific category
+              const shouldShow = skillFilterInput.trim() || selectedCategory !== 'All';
+              
+              if (!shouldShow) return null;
+
+              return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', padding: '8px 10px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+                  {unselectedSkills.length === 0 ? (
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic', padding: '4px 0' }}>
+                      {skillFilterInput ? 'No skills match your search' : 'All skills in this category are selected'}
+                    </span>
+                  ) : (
+                    unselectedSkills.map(skill => (
+                      <button key={skill} onClick={() => toggleFilterSkill(skill)} style={{
+                        padding: '3px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '500',
+                        cursor: 'pointer', transition: 'all 0.12s',
+                        border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)',
+                      }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                      >{skill}</button>
+                    ))
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
-      {/* Score Summary Bar */}
-      {filteredCandidates.filter(p => p.agentScore !== undefined && p.agentScore !== null).length > 0 && (
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-          {[
-            { label: 'AI Score: High (70+)', count: filteredCandidates.filter(p => p.agentScore !== undefined && p.agentScore !== null && p.agentScore >= 70).length, color: '#4ade80', bg: 'rgba(22, 163, 74, 0.15)' },
-            { label: 'AI Score: Mid (40–69)', count: filteredCandidates.filter(p => p.agentScore !== undefined && p.agentScore !== null && p.agentScore >= 40 && p.agentScore < 70).length, color: '#fbbf24', bg: 'rgba(217, 119, 6, 0.15)' },
-            { label: 'AI Score: Low (<40)', count: filteredCandidates.filter(p => p.agentScore !== undefined && p.agentScore !== null && p.agentScore < 40).length, color: 'var(--text-secondary)', bg: 'var(--bg-main)' },
-          ].map(({ label, count, color, bg }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', backgroundColor: bg, borderRadius: '6px' }}>
-              <span style={{ fontSize: '18px', fontWeight: '800', color, lineHeight: 1 }}>{count}</span>
-              <span style={{ fontSize: '12px', fontWeight: '500', color, opacity: 0.8 }}>{label}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Candidates List */}
-      {filteredCandidates.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: 'var(--bg-surface)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-          <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>No candidates match your filters</h3>
-          <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-secondary)' }}>Try loosening the filters or clearing them entirely.</p>
-          <button onClick={resetFilters} style={{ padding: '8px 20px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
-            Reset All Filters
-          </button>
-        </div>
-      ) : viewMode === 'list' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {filteredCandidates.map((p, idx) => (
-            <CandidateCard key={idx} profile={p} onRemove={removeCandidate} isHighlighted={highlightedUrl === (p.linkedinUrl || p.url)} />
-          ))}
-        </div>
-      ) : (
-        // Compact grid view
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '10px' }}>
-          {filteredCandidates.map((p, idx) => {
-            const displayScore = (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : null;
-            const scoreColors = displayScore !== null ? getScoreColor(displayScore) : null;
-            const name = `${safeExtractText(p.firstName)} ${safeExtractText(p.lastName)}`.trim();
-            const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
-            const url = safeExtractText(p.linkedinUrl || p.url);
-            const skills = extractSkillsList(p);
-            return (
-              <div key={idx} style={{
-                backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)',
-                borderRadius: '8px', padding: '14px 16px',
-                transition: 'border-color 0.15s',
-              }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-hover)'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '2px' }}>
-                      <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{name}</p>
-                      <span style={{ 
-                        fontSize: '9px', 
-                        fontWeight: '600', 
-                        backgroundColor: STAGE_BADGES[p.status || 'sourced'].bg, 
-                        color: STAGE_BADGES[p.status || 'sourced'].text, 
-                        border: `1px solid ${STAGE_BADGES[p.status || 'sourced'].border}`,
-                        padding: '1px 5px', 
-                        borderRadius: '10px',
-                        display: 'inline-block',
-                        lineHeight: '1.2'
-                      }}>
-                        {STAGE_BADGES[p.status || 'sourced'].label}
-                      </span>
+      {/* Candidates List — Scrollable container */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {filteredCandidates.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: 'var(--bg-surface)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>No candidates match your filters</h3>
+            <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-secondary)' }}>Try loosening the filters or clearing them entirely.</p>
+            <button onClick={resetFilters} style={{ padding: '8px 20px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
+              Reset All Filters
+            </button>
+          </div>
+        ) : viewMode === 'list' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {paginatedCandidates.map((p, idx) => (
+              <CandidateCard key={(safeCurrentPage - 1) * ITEMS_PER_PAGE + idx} profile={p} onRemove={removeCandidate} isHighlighted={highlightedUrl === (p.linkedinUrl || p.url)} />
+            ))}
+          </div>
+        ) : (
+          // Compact grid view
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '10px' }}>
+            {paginatedCandidates.map((p, idx) => {
+              const displayScore = (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : null;
+              const scoreColors = displayScore !== null ? getScoreColor(displayScore) : null;
+              const name = `${safeExtractText(p.firstName)} ${safeExtractText(p.lastName)}`.trim();
+              const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
+              const url = safeExtractText(p.linkedinUrl || p.url);
+              const skills = extractSkillsList(p);
+              return (
+                <div key={(safeCurrentPage - 1) * ITEMS_PER_PAGE + idx} style={{
+                  backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)',
+                  borderRadius: '8px', padding: '14px 16px',
+                  transition: 'border-color 0.15s',
+                }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-hover)'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                        <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{name}</p>
+                        <span style={{ 
+                          fontSize: '9px', 
+                          fontWeight: '600', 
+                          backgroundColor: STAGE_BADGES[p.status || 'sourced'].bg, 
+                          color: STAGE_BADGES[p.status || 'sourced'].text, 
+                          border: `1px solid ${STAGE_BADGES[p.status || 'sourced'].border}`,
+                          padding: '1px 5px', 
+                          borderRadius: '10px',
+                          display: 'inline-block',
+                          lineHeight: '1.2'
+                        }}>
+                          {STAGE_BADGES[p.status || 'sourced'].label}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title.substring(0, 50)}</p>
                     </div>
-                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title.substring(0, 50)}</p>
+                    <div style={{ display: 'flex', gap: '6px', marginLeft: '8px', flexShrink: 0 }}>
+                      {displayScore !== null && (
+                        <span style={{ backgroundColor: scoreColors.bg, color: scoreColors.text, border: `1px solid ${scoreColors.border}`, padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '800' }}>
+                          {displayScore}
+                        </span>
+                      )}
+                      {url && url !== 'N/A' && (
+                        <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: 'rgba(0, 229, 255, 0.1)', borderRadius: '4px', color: 'var(--accent)', border: '1px solid rgba(0, 229, 255, 0.3)', fontSize: '10px', fontWeight: '700', textDecoration: 'none' }}>in</a>
+                      )}
+                      <button onClick={() => removeCandidate(p)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: 'rgba(220, 38, 38, 0.1)', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#f87171' }}>×</button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '6px', marginLeft: '8px', flexShrink: 0 }}>
-                    {displayScore !== null && (
-                      <span style={{ backgroundColor: scoreColors.bg, color: scoreColors.text, border: `1px solid ${scoreColors.border}`, padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '800' }}>
-                        {displayScore}
-                      </span>
-                    )}
-                    {url && url !== 'N/A' && (
-                      <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: 'rgba(0, 229, 255, 0.1)', borderRadius: '4px', color: 'var(--accent)', border: '1px solid rgba(0, 229, 255, 0.3)', fontSize: '10px', fontWeight: '700', textDecoration: 'none' }}>in</a>
-                    )}
-                    <button onClick={() => removeCandidate(p)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: 'rgba(220, 38, 38, 0.1)', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#f87171' }}>×</button>
-                  </div>
+                  <p style={{ margin: '0 0 8px', fontSize: '11px', color: 'var(--text-secondary)' }}>{safeExtractText(p.location).split(',')[0]}</p>
+                  {skills && skills !== '' && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                      {skills.split(', ').slice(0, 5).map((skill, i) => (
+                        <span key={i} style={{ padding: '2px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: '500', backgroundColor: 'var(--bg-main)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>{skill}</span>
+                      ))}
+                      {skills.split(', ').length > 5 && <span style={{ padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}>+{skills.split(', ').length - 5}</span>}
+                    </div>
+                  )}
                 </div>
-                <p style={{ margin: '0 0 8px', fontSize: '11px', color: 'var(--text-secondary)' }}>{safeExtractText(p.location).split(',')[0]}</p>
-                {skills && skills !== '' && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                    {skills.split(', ').slice(0, 5).map((skill, i) => (
-                      <span key={i} style={{ padding: '2px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: '500', backgroundColor: 'var(--bg-main)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>{skill}</span>
-                    ))}
-                    {skills.split(', ').length > 5 && <span style={{ padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}>+{skills.split(', ').length - 5}</span>}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Pagination Controls */}
+      {filteredCandidates.length > ITEMS_PER_PAGE && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', padding: '14px 0 4px', flexShrink: 0, borderTop: '1px solid var(--border-color)', marginTop: '12px' }}>
+          <button
+            onClick={() => setCurrentPage(1)}
+            disabled={safeCurrentPage === 1}
+            style={{
+              padding: '6px 10px', border: '1px solid var(--border-color)', borderRadius: '6px',
+              backgroundColor: 'var(--bg-surface)', color: safeCurrentPage === 1 ? 'var(--text-secondary)' : 'var(--text-primary)',
+              cursor: safeCurrentPage === 1 ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: '500',
+              opacity: safeCurrentPage === 1 ? 0.4 : 1,
+            }}
+          >«</button>
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={safeCurrentPage === 1}
+            style={{
+              padding: '6px 12px', border: '1px solid var(--border-color)', borderRadius: '6px',
+              backgroundColor: 'var(--bg-surface)', color: safeCurrentPage === 1 ? 'var(--text-secondary)' : 'var(--text-primary)',
+              cursor: safeCurrentPage === 1 ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: '500',
+              opacity: safeCurrentPage === 1 ? 0.4 : 1,
+            }}
+          >← Prev</button>
+
+          {/* Page number buttons */}
+          {(() => {
+            const pages = [];
+            let startPage = Math.max(1, safeCurrentPage - 2);
+            let endPage = Math.min(totalPages, startPage + 4);
+            if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
+
+            for (let i = startPage; i <= endPage; i++) {
+              pages.push(
+                <button
+                  key={i}
+                  onClick={() => setCurrentPage(i)}
+                  style={{
+                    padding: '6px 10px', border: i === safeCurrentPage ? '1px solid var(--accent)' : '1px solid var(--border-color)',
+                    borderRadius: '6px', fontSize: '12px', fontWeight: i === safeCurrentPage ? '700' : '500',
+                    backgroundColor: i === safeCurrentPage ? 'var(--accent)' : 'var(--bg-surface)',
+                    color: i === safeCurrentPage ? 'var(--accent-fg)' : 'var(--text-primary)',
+                    cursor: 'pointer', minWidth: '34px', transition: 'all 0.15s',
+                  }}
+                >{i}</button>
+              );
+            }
+            return pages;
+          })()}
+
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={safeCurrentPage === totalPages}
+            style={{
+              padding: '6px 12px', border: '1px solid var(--border-color)', borderRadius: '6px',
+              backgroundColor: 'var(--bg-surface)', color: safeCurrentPage === totalPages ? 'var(--text-secondary)' : 'var(--text-primary)',
+              cursor: safeCurrentPage === totalPages ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: '500',
+              opacity: safeCurrentPage === totalPages ? 0.4 : 1,
+            }}
+          >Next →</button>
+          <button
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={safeCurrentPage === totalPages}
+            style={{
+              padding: '6px 10px', border: '1px solid var(--border-color)', borderRadius: '6px',
+              backgroundColor: 'var(--bg-surface)', color: safeCurrentPage === totalPages ? 'var(--text-secondary)' : 'var(--text-primary)',
+              cursor: safeCurrentPage === totalPages ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: '500',
+              opacity: safeCurrentPage === totalPages ? 0.4 : 1,
+            }}
+          >»</button>
+
+          <span style={{ fontSize: '12px', color: 'var(--text-secondary)', marginLeft: '8px' }}>
+            {(safeCurrentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(safeCurrentPage * ITEMS_PER_PAGE, filteredCandidates.length)} of {filteredCandidates.length}
+          </span>
         </div>
       )}
     </div>
