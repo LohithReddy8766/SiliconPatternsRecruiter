@@ -1,11 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
+import { GoogleOAuthProvider } from '@react-oauth/google';
+import { AuthProvider, useAuth } from './AuthContext';
+import LoginPage from './LoginPage';
+import AdminPage from './AdminPage';
 import CandidatesPage from './CandidatesPage.jsx';
 import AIAgentPage from './AIAgentPage.jsx';
 import PipelinePage from './PipelinePage.jsx';
 import AnalyticsPage from './AnalyticsPage.jsx';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
 import logo from './assets/logo.png';
+
+const ProtectedRoute = ({ children }) => {
+  const { currentUser, loading } = useAuth();
+  if (loading) return null;
+  if (!currentUser) return <Navigate to="/login" replace />;
+  return children;
+};
 
 const DEFAULT_APIFY_TOKEN = import.meta.env.VITE_APIFY_API_TOKEN || '';
 const ACTOR_NAME = 'harvestapi~linkedin-profile-search';
@@ -221,18 +232,19 @@ function TagSelect({ options, selected, onChange, placeholder, allowCustom = tru
 function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const isSearch = location.pathname === '/';
+  const { currentUser, logout } = useAuth();
+  const isSearch = location.pathname === '/' || location.pathname === '/search';
   const isCandidates = location.pathname === '/candidates';
 
   // Get status color/text
   const getDbBadge = () => {
     switch (dbStatus) {
       case 'connected':
-        return { label: 'Shared DB', bg: 'var(--bg-main)', color: '#ededed', border: 'var(--border-color)', dot: '#ededed' };
+        return { label: 'Shared DB', bg: 'var(--bg-main)', color: 'var(--text-primary)', border: 'var(--border-color)', dot: '#10b981' };
       case 'connecting':
-        return { label: 'Syncing...', bg: 'var(--bg-main)', color: '#a1a1aa', border: 'var(--border-color)', dot: '#f5a623' };
+        return { label: 'Syncing...', bg: 'var(--bg-main)', color: 'var(--text-secondary)', border: 'var(--border-color)', dot: '#f5a623' };
       case 'error':
-        return { label: 'DB Error', bg: 'var(--bg-main)', color: '#ff0000', border: 'var(--border-color)', dot: '#ff0000' };
+        return { label: 'DB Error', bg: 'var(--bg-main)', color: '#ef4444', border: 'var(--border-color)', dot: '#ef4444' };
       default:
         return { label: 'Local', bg: 'var(--bg-main)', color: 'var(--text-secondary)', border: 'var(--border-color)', dot: 'var(--text-secondary)' };
     }
@@ -263,11 +275,12 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
         <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px', paddingLeft: '8px' }}>Workspace</div>
         {[
-          { label: 'Discovery', path: '/', active: isSearch, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> },
+          { label: 'Discovery', path: '/search', active: isSearch, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> },
           { label: candidateCount > 0 ? `Talent Pool (${candidateCount})` : 'Talent Pool', path: '/candidates', active: isCandidates, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> },
           { label: 'Evaluation', path: '/agent', active: location.pathname === '/agent', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> },
           { label: 'Recruitment', path: '/pipeline', active: location.pathname === '/pipeline', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg> },
-          { label: 'Insights', path: '/analytics', active: location.pathname === '/analytics', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> }
+          { label: 'Insights', path: '/analytics', active: location.pathname === '/analytics', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> },
+          ...(currentUser?.role === 'admin' ? [{ label: 'Admin Dashboard', path: '/admin', active: location.pathname === '/admin', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg> }] : [])
         ].map(({ label, path, active, icon }) => (
           <button key={path} onClick={() => navigate(path)} style={{
             padding: '10px 12px', borderRadius: '8px', fontSize: '13px',
@@ -286,48 +299,8 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
         ))}
       </div>
 
-      {/* Bottom section: Theme, Settings, DB Status */}
+      {/* Bottom section: DB Status, Theme, Settings, Logout */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px' }}>
-          <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '500' }}>Theme</span>
-          <button
-            onClick={toggleTheme}
-            style={{
-              background: 'var(--bg-surface)', border: '1px solid var(--border-color)', cursor: 'pointer',
-              padding: '2px', borderRadius: '16px', display: 'flex', alignItems: 'center',
-              width: '40px', height: '22px', position: 'relative', transition: 'all 0.15s'
-            }}
-            title="Toggle Theme"
-          >
-            <span style={{ fontSize: '10px', marginLeft: '3px', opacity: theme === 'dark' ? 1 : 0, position: 'absolute', left: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-primary)' }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
-            </span>
-            <span style={{ fontSize: '10px', marginRight: '3px', opacity: theme === 'light' ? 1 : 0, position: 'absolute', right: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
-            </span>
-            <div style={{
-              width: '16px', height: '16px', backgroundColor: 'var(--text-primary)', borderRadius: '50%',
-              transform: theme === 'dark' ? 'translateX(18px)' : 'translateX(0)',
-              transition: 'transform 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', zIndex: 1
-            }} />
-          </button>
-        </div>
-
-        <button
-          onClick={onOpenSettings}
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
-            padding: '8px 12px', borderRadius: '6px', fontSize: '13px', display: 'flex',
-            alignItems: 'center', color: 'var(--text-secondary)', transition: 'all 0.15s', fontWeight: '500'
-          }}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-surface)'}
-          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-        >
-          Settings
-        </button>
-
-        {/* DB Connection Badge */}
         <div style={{ padding: '0 8px' }}>
           <span style={{
             fontSize: '11px', fontWeight: '500',
@@ -339,6 +312,44 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
             <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: badge.dot }} />
             {badge.label}
           </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <button
+            onClick={() => { logout(); navigate('/login'); }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+              padding: '8px 12px', borderRadius: '8px', fontSize: '13px', display: 'flex',
+              alignItems: 'center', gap: '12px', color: 'var(--text-secondary)', transition: 'all 0.15s', fontWeight: '500',
+              flex: 1
+            }}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.7 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></span>
+            Logout
+          </button>
+
+          <div style={{ display: 'flex', gap: '4px', paddingRight: '8px' }}>
+            <button
+              onClick={onOpenSettings}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', borderRadius: '6px', transition: 'all 0.15s' }}
+              title="Settings"
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </button>
+            <button
+              onClick={toggleTheme}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', borderRadius: '6px', transition: 'all 0.15s' }}
+              title="Toggle Theme"
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--bg-surface)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+            >
+              {theme === 'dark' ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>}
+            </button>
+          </div>
         </div>
       </div>
     </nav>
@@ -353,6 +364,7 @@ function SearchPage({ masterLeads, setMasterLeads }) {
   const [designation, setDesignation] = useState([]);
   const [experience, setExperience] = useState([]);
   const [openToWork, setOpenToWork] = useState(false);
+  const [maxItems, setMaxItems] = useState(100);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [apifyRunUrl, setApifyRunUrl] = useState(null);
@@ -407,7 +419,7 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         ...(designation.length > 0 && { currentJobTitles: designation }),
         ...(experience.length > 0 && { yearsOfExperienceIds: experience }),
         profileScraperMode: "Full",
-        maxItems: 50
+        maxItems: maxItems
       };
 
       const currentApifyToken = localStorage.getItem('siliconPatternsApifyKey') || DEFAULT_APIFY_TOKEN;
@@ -524,11 +536,6 @@ function SearchPage({ masterLeads, setMasterLeads }) {
           <h1 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: '600', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Targeted Search</h1>
           <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)' }}>Configure parameters and launch a LinkedIn scrape to find candidates.</p>
         </div>
-        {masterLeads.length > 0 && (
-          <button onClick={() => navigate('/candidates')} style={{ padding: '8px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'all 0.15s' }}>
-            View {masterLeads.length} Candidates →
-          </button>
-        )}
       </div>
 
       <div style={{ backgroundColor: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)', padding: '24px' }}>
@@ -659,34 +666,61 @@ function SearchPage({ masterLeads, setMasterLeads }) {
             </div>
           </div>
 
-          <div
-            onClick={() => setOpenToWork(!openToWork)}
-            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', cursor: 'pointer', width: 'fit-content' }}
-          >
-            <div style={{
-              width: '36px', height: '20px', backgroundColor: openToWork ? 'var(--accent)' : 'var(--bg-surface)',
-              borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s',
-              border: `1px solid ${openToWork ? 'var(--accent)' : 'var(--border-color)'}`
-            }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
+            <div
+              onClick={() => setOpenToWork(!openToWork)}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', cursor: 'pointer', width: 'fit-content' }}
+            >
               <div style={{
-                width: '14px', height: '14px', backgroundColor: openToWork ? 'var(--accent-fg)' : 'var(--text-secondary)',
-                borderRadius: '50%', position: 'absolute', top: '2px', left: openToWork ? '18px' : '2px',
-                transition: 'all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-              }} />
+                width: '36px', height: '20px', backgroundColor: openToWork ? 'var(--accent)' : 'var(--bg-surface)',
+                borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s',
+                border: `1px solid ${openToWork ? 'var(--accent)' : 'var(--border-color)'}`
+              }}>
+                <div style={{
+                  width: '14px', height: '14px', backgroundColor: openToWork ? 'var(--accent-fg)' : 'var(--text-secondary)',
+                  borderRadius: '50%', position: 'absolute', top: '2px', left: openToWork ? '18px' : '2px',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                }} />
+              </div>
+              <span style={{ fontSize: '13px', fontWeight: '500', color: openToWork ? 'var(--text-primary)' : 'var(--text-secondary)', userSelect: 'none', transition: 'color 0.2s' }}>
+                Open to Work
+              </span>
             </div>
-            <span style={{ fontSize: '13px', fontWeight: '500', color: openToWork ? 'var(--text-primary)' : 'var(--text-secondary)', userSelect: 'none', transition: 'color 0.2s' }}>
-              Open to Work
-            </span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)' }}>Max Items to Scrape:</label>
+              <input 
+                type="number" 
+                value={maxItems} 
+                onChange={(e) => setMaxItems(parseInt(e.target.value) || 100)}
+                min="1"
+                max="2000"
+                style={{ 
+                  width: '80px', padding: '8px 12px', borderRadius: '6px', 
+                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', 
+                  color: 'var(--text-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '13px'
+                }} 
+              />
+            </div>
           </div>
 
           <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="submit" disabled={loading} style={{
-              padding: '10px 20px', backgroundColor: loading ? 'var(--border-color)' : 'var(--accent)',
+            <button type="submit" disabled={loading} title="Run Targeted Search" style={{
+              padding: '10px', backgroundColor: loading ? 'var(--border-color)' : 'var(--accent)',
               color: 'var(--accent-fg)', border: 'none', borderRadius: '6px',
-              fontSize: '14px', fontWeight: '500',
-              cursor: loading ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: loading ? 'not-allowed' : 'pointer', transition: 'all 0.2s', width: '40px', height: '40px'
             }}>
-              {loading ? 'Executing Data Scrape...' : 'Run Targeted Search'}
+              {loading ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                  <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              )}
             </button>
           </div>
         </form>
@@ -808,19 +842,7 @@ export default function App() {
         .catch(err => {
           console.error("Failed to sync Supabase database on load:", err);
           setDbStatus('error');
-          // Fallback to local storage candidates
-          const savedData = localStorage.getItem('siliconPatternsMasterDatabase');
-          if (savedData) {
-            try { setMasterLeads(JSON.parse(savedData)); }
-            catch (e) { }
-          }
         });
-    } else {
-      const savedData = localStorage.getItem('siliconPatternsMasterDatabase');
-      if (savedData) {
-        try { setMasterLeads(JSON.parse(savedData)); }
-        catch (e) { console.error("Failed to load local database", e); }
-      }
     }
   }, []);
 
@@ -830,18 +852,7 @@ export default function App() {
 
     setMasterLeads(resolvedLeads);
 
-    if (resolvedLeads.length === 0) {
-      localStorage.removeItem('siliconPatternsMasterDatabase');
-    } else {
-      try {
-        localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(resolvedLeads));
-      } catch (err) {
-        console.error("Local storage save failed. Data may be too large:", err);
-        if (!useSupabase) {
-          alert("Warning: Browser local storage is full. Candidate data could not be saved locally. Please connect a Supabase database to store more candidates, or clear some data.");
-        }
-      }
-    }
+
 
     if (useSupabase && supabaseUrl && supabaseKey) {
       try {
@@ -924,11 +935,7 @@ export default function App() {
 
         // 4. Update state and config
         setMasterLeads(mergedLeads);
-        try {
-          localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(mergedLeads));
-        } catch (e) {
-          console.warn("Local storage quota exceeded. Database sync continuing online.");
-        }
+
 
         localStorage.setItem('siliconPatternsDbMode', 'supabase');
         localStorage.setItem('siliconPatternsSupabaseUrl', inputUrl);
@@ -973,18 +980,26 @@ export default function App() {
 alter table candidates disable row level security;`;
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-main)', fontFamily: 'var(--sans)', color: 'var(--text-primary)' }}>
-      <Sidebar candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} theme={theme} toggleTheme={toggleTheme} />
-
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || 'dummy-client-id'}>
+      <AuthProvider>
         <Routes>
-          <Route path="/" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-          <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-          <Route path="/agent" element={<AIAgentPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-          <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-          <Route path="/analytics" element={<AnalyticsPage masterLeads={masterLeads} />} />
-        </Routes>
-      </div>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/*" element={
+            <ProtectedRoute>
+              <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-main)', fontFamily: 'var(--sans)', color: 'var(--text-primary)' }}>
+                <Sidebar candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} theme={theme} toggleTheme={toggleTheme} />
+
+                <div style={{ flex: 1, overflowY: 'auto' }}>
+                  <Routes>
+                    <Route path="/" element={<Navigate to="/search" replace />} />
+                    <Route path="/search" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+                    <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+                    <Route path="/agent" element={<AIAgentPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+                    <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+                    <Route path="/analytics" element={<AnalyticsPage masterLeads={masterLeads} />} />
+                    <Route path="/admin" element={<AdminPage />} />
+                  </Routes>
+                </div>
 
       {/* Settings Modal Dialog */}
       {showSettings && (
@@ -1166,6 +1181,11 @@ alter table candidates disable row level security;`;
           </div>
         </div>
       )}
-    </div>
+              </div>
+            </ProtectedRoute>
+          } />
+        </Routes>
+      </AuthProvider>
+    </GoogleOAuthProvider>
   );
 }

@@ -54,8 +54,9 @@ function getScoreColor(score) {
   return { bg: 'var(--bg-main)', text: 'var(--text-secondary)', border: 'var(--border-color)' };
 }
 
-function CandidateCard({ profile, onRemove, isHighlighted }) {
+function CandidateCard({ profile, onRemove, isHighlighted, filterSkills, filterLocation }) {
   const [expanded, setExpanded] = useState(isHighlighted || false);
+  const [showAllSkills, setShowAllSkills] = useState(false);
   const name = `${safeExtractText(profile.firstName)} ${safeExtractText(profile.lastName)}`.trim();
   const title = safeExtractText(profile.currentTitle || profile.jobTitle || profile.headline);
   const location = safeExtractText(profile.location).split(',')[0];
@@ -229,7 +230,7 @@ Generate the JSON outreach sequence now.`
               <p style={{ margin: '3px 0 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {title}
               </p>
-              <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>{location}</p>
+              <p style={{ margin: '2px 0 0', fontSize: '12px', color: (filterLocation && location.toLowerCase().includes(filterLocation.toLowerCase())) ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: (filterLocation && location.toLowerCase().includes(filterLocation.toLowerCase())) ? '600' : 'normal' }}>{location}</p>
             </div>
           </div>
 
@@ -270,24 +271,64 @@ Generate the JSON outreach sequence now.`
         </div>
 
         {/* Skills chips */}
-        {skills && skills !== 'N/A' && skills !== '' && (
-          <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-            {skills.split(', ').slice(0, 8).map((skill, i) => (
-              <span key={i} style={{
-                padding: '2px 8px', borderRadius: '4px',
-                fontSize: '11px', fontWeight: '500',
-                backgroundColor: ASIC_SKILLS.includes(skill) ? 'var(--bg-surface)' : 'var(--bg-main)',
-                color: ASIC_SKILLS.includes(skill) ? 'var(--text-primary)' : 'var(--text-secondary)',
-                border: ASIC_SKILLS.includes(skill) ? '1px solid var(--border-color)' : '1px solid var(--border-color)',
-              }}>{skill}</span>
-            ))}
-            {skills.split(', ').length > 8 && (
-              <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                +{skills.split(', ').length - 8} more
-              </span>
-            )}
-          </div>
-        )}
+        {skills && skills !== 'N/A' && skills !== '' && (() => {
+          const skillsList = skills.split(', ');
+          const visibleSkills = showAllSkills ? skillsList : skillsList.slice(0, 8);
+          const hasMore = !showAllSkills && skillsList.length > 8;
+
+          return (
+            <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+              {visibleSkills.map((skill, i) => {
+                const hasActiveFilter = filterSkills && filterSkills.length > 0;
+                let isHighlight = false;
+                let isFilterMatch = false;
+                if (hasActiveFilter) {
+                  isFilterMatch = filterSkills.some(fs => skill.toLowerCase().includes(fs.toLowerCase()));
+                  isHighlight = isFilterMatch;
+                } else {
+                  isHighlight = ASIC_SKILLS.includes(skill);
+                }
+                return (
+                  <span key={i} style={{
+                    padding: '2px 8px', borderRadius: '4px',
+                    fontSize: '11px', fontWeight: '500',
+                    backgroundColor: isHighlight ? 'var(--bg-surface)' : 'var(--bg-main)',
+                    color: isHighlight ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    border: isFilterMatch ? '1px solid var(--accent)' : '1px solid var(--border-color)',
+                  }}>{skill}</span>
+                );
+              })}
+              {hasMore && (
+                <button 
+                  onClick={() => setShowAllSkills(true)}
+                  style={{ 
+                    padding: '2px 8px', borderRadius: '4px', fontSize: '11px', 
+                    color: 'var(--text-secondary)', backgroundColor: 'var(--bg-main)', 
+                    border: '1px solid var(--border-color)', cursor: 'pointer', transition: 'all 0.15s' 
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+                >
+                  +{skillsList.length - 8} more
+                </button>
+              )}
+              {showAllSkills && skillsList.length > 8 && (
+                <button 
+                  onClick={() => setShowAllSkills(false)}
+                  style={{ 
+                    padding: '2px 8px', borderRadius: '4px', fontSize: '11px', 
+                    color: 'var(--text-secondary)', backgroundColor: 'var(--bg-main)', 
+                    border: '1px solid var(--border-color)', cursor: 'pointer', transition: 'all 0.15s' 
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+                >
+                  Show less
+                </button>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Expanded Details */}
@@ -473,6 +514,14 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   const [filterSkills, setFilterSkills] = useState([]);
   const [skillFilterInput, setSkillFilterInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [customFilterSkill, setCustomFilterSkill] = useState('');
+
+  const handleAddCustomFilterSkill = () => {
+    if (customFilterSkill.trim() && !filterSkills.includes(customFilterSkill.trim())) {
+      setFilterSkills(prev => [...prev, customFilterSkill.trim()]);
+      setCustomFilterSkill('');
+    }
+  };
   
   const availableMasterSkills = selectedCategory === 'All' ? ASIC_SKILLS : ASIC_SKILLS_CATEGORIZED[selectedCategory];
   const filteredMasterSkills = availableMasterSkills.filter(s => s.toLowerCase().includes(skillFilterInput.toLowerCase()));
@@ -497,23 +546,17 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       return leadUrl !== urlToRemove;
     });
     setMasterLeads(updated);
-    if (updated.length === 0) {
-      localStorage.removeItem('siliconPatternsMasterDatabase');
-    } else {
-      localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(updated));
-    }
   };
 
   const clearAll = () => {
     if (window.confirm('Delete ALL candidates from the Master Database? This cannot be undone.')) {
       setMasterLeads([]);
-      localStorage.removeItem('siliconPatternsMasterDatabase');
     }
   };
 
   const downloadCSV = () => {
     if (filteredCandidates.length === 0) return;
-    const headers = ['Match Score', 'First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience Level', 'LinkedIn URL'];
+    const headers = ['First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience Level', 'LinkedIn URL'];
     
     const escapeCsv = (str) => {
       if (str === null || str === undefined) return '""';
@@ -547,9 +590,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       if (p.positions && Array.isArray(p.positions)) exp = p.positions.map(e => getLevel(e.title)).filter(Boolean).join(' | ');
       else if (p.experience && Array.isArray(p.experience)) exp = p.experience.map(e => getLevel(e.title)).filter(Boolean).join(' | ');
 
-      const score = p.agentScore !== undefined && p.agentScore !== null ? p.agentScore : 'N/A';
-
-      return [score, safeExtractText(p.firstName), safeExtractText(p.lastName), title, loc, skills, about, exp, url]
+      return [safeExtractText(p.firstName), safeExtractText(p.lastName), title, loc, skills, about, exp, url]
         .map(escapeCsv)
         .join(',');
     });
@@ -680,11 +721,11 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={downloadCSV} style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
-            Export CSV
+          <button onClick={downloadCSV} title="Export CSV" style={{ padding: '8px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           </button>
-          <button onClick={clearAll} style={{ padding: '8px 12px', backgroundColor: 'var(--bg-surface)', color: '#ef4444', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
-            Clear All
+          <button onClick={clearAll} title="Clear All Candidates" style={{ padding: '8px', backgroundColor: 'var(--bg-surface)', color: '#ef4444', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
           </button>
         </div>
       </div>
@@ -723,8 +764,8 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
             ))}
           </div>
           {hasActiveFilters && (
-            <button onClick={resetFilters} style={{ padding: '7px 14px', backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>
-              Clear Filters
+            <button onClick={resetFilters} title="Clear Filters" style={{ padding: '6px', backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </button>
           )}
         </div>
@@ -797,6 +838,24 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
                 onChange={e => setSkillFilterInput(e.target.value)}
                 style={{ ...inputStyle, flex: 1, maxWidth: '320px' }}
               />
+              <input
+                type="text"
+                placeholder="Custom skill..."
+                value={customFilterSkill}
+                onChange={e => setCustomFilterSkill(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddCustomFilterSkill(); }}
+                style={{ ...inputStyle, width: '140px', flex: 'none' }}
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomFilterSkill}
+                style={{
+                  padding: '8px 16px', backgroundColor: 'var(--text-primary)', color: 'var(--bg-main)',
+                  border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                }}
+              >
+                Add
+              </button>
             </div>
 
             {/* Skill results */}
@@ -845,7 +904,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
         ) : viewMode === 'list' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {paginatedCandidates.map((p, idx) => (
-              <CandidateCard key={(safeCurrentPage - 1) * ITEMS_PER_PAGE + idx} profile={p} onRemove={removeCandidate} isHighlighted={highlightedUrl === (p.linkedinUrl || p.url)} />
+              <CandidateCard key={(safeCurrentPage - 1) * ITEMS_PER_PAGE + idx} profile={p} onRemove={removeCandidate} isHighlighted={highlightedUrl === (p.linkedinUrl || p.url)} filterSkills={filterSkills} filterLocation={filterLocation} />
             ))}
           </div>
         ) : (
@@ -899,15 +958,34 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
                       <button onClick={() => removeCandidate(p)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', backgroundColor: 'rgba(220, 38, 38, 0.1)', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#f87171' }}>×</button>
                     </div>
                   </div>
-                  <p style={{ margin: '0 0 8px', fontSize: '11px', color: 'var(--text-secondary)' }}>{safeExtractText(p.location).split(',')[0]}</p>
-                  {skills && skills !== '' && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {skills.split(', ').slice(0, 5).map((skill, i) => (
-                        <span key={i} style={{ padding: '2px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: '500', backgroundColor: 'var(--bg-main)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>{skill}</span>
-                      ))}
-                      {skills.split(', ').length > 5 && <span style={{ padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}>+{skills.split(', ').length - 5}</span>}
-                    </div>
-                  )}
+                  <p style={{ margin: '0 0 8px', fontSize: '11px', color: (filterLocation && safeExtractText(p.location).split(',')[0].toLowerCase().includes(filterLocation.toLowerCase())) ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: (filterLocation && safeExtractText(p.location).split(',')[0].toLowerCase().includes(filterLocation.toLowerCase())) ? '600' : 'normal' }}>{safeExtractText(p.location).split(',')[0]}</p>
+                  {skills && skills !== '' && (() => {
+                    const skillsList = skills.split(', ');
+                    const hasActiveFilter = filterSkills && filterSkills.length > 0;
+                    return (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {skillsList.slice(0, 5).map((skill, i) => {
+                          let isHighlight = false;
+                          let isFilterMatch = false;
+                          if (hasActiveFilter) {
+                            isFilterMatch = filterSkills.some(fs => skill.toLowerCase().includes(fs.toLowerCase()));
+                            isHighlight = isFilterMatch;
+                          } else {
+                            isHighlight = ASIC_SKILLS.includes(skill);
+                          }
+                          return (
+                            <span key={i} style={{ 
+                              padding: '2px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: '500', 
+                              backgroundColor: isHighlight ? 'var(--bg-surface)' : 'var(--bg-main)', 
+                              color: isHighlight ? 'var(--text-primary)' : 'var(--text-secondary)', 
+                              border: isFilterMatch ? '1px solid var(--accent)' : '1px solid var(--border-color)' 
+                            }}>{skill}</span>
+                          );
+                        })}
+                        {skillsList.length > 5 && <span style={{ padding: '2px 6px', fontSize: '10px', color: 'var(--text-secondary)' }}>+{skillsList.length - 5}</span>}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

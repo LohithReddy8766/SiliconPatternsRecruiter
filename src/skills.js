@@ -1,6 +1,6 @@
 export const ASIC_SKILLS_CATEGORIZED = {
   "Frontend / DV": ["UVM", "SystemVerilog", "Verilog", "VHDL", "Formal", "C", "C++"],
-  "DFT": ["DFT", "Scan", "BIST", "MBIST", "JTAG", "IEEE 1500", "IEEE 1687"],
+  "DFT": ["DFT", "ATPG", "Scan", "BIST", "MBIST", "JTAG", "IEEE 1500", "IEEE 1687"],
   "Emulation / Low Power": ["ZeBu", "Palladium", "Veloce", "UPF", "CPF"],
   "Backend / PD": ["Floorplanning", "CTS", "Routing", "ECO", "STA", "DRC/LVS", "IR/EM", "Power Signoff", "OPC", "Thermal Analysis", "Aging/BTI", "Noise Analysis", "2.5D Integration", "Multi-Vt Optimization"],
   "Protocols / IO": ["PCIe", "PCIe Gen3", "PCIe Gen4", "PCIe Gen5", "PCIe Gen6", "CXL", "CXL 1.1", "CXL 2.0", "CXL 3.0", "USB", "USB 2.0", "USB 3.0", "USB4", "Ethernet", "Ethernet 1G", "Ethernet 10G", "Ethernet 400G", "SerDes", "SerDes 28G", "SerDes 112G", "SATA", "SATA 3.0", "MIPI", "MIPI CSI-2", "MIPI D-PHY", "UFS", "UFS 3.1", "HDMI", "HDMI 2.1", "DisplayPort", "SDIO", "SPI", "I2C", "NVMe", "UART", "SAS", "Fibre Channel", "Wi-Fi", "Bluetooth LE"],

@@ -233,6 +233,38 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
     }
   };
 
+  const downloadLeaderboardCSV = () => {
+    const evaluatedCandidates = masterLeads.map((candidate, idx) => {
+      const candUrl = candidate.linkedinUrl || candidate.url || `candidate-${idx}`;
+      return { candidate, result: agentResults[candUrl] };
+    }).filter(item => item.result).sort((a, b) => b.result.score - a.result.score);
+
+    if (evaluatedCandidates.length === 0) return;
+
+    const headers = ['Evaluation Score', 'First Name', 'Last Name', 'Current Title', 'LinkedIn URL', 'AI Reasoning'];
+    
+    const escapeCsv = (str) => {
+      if (str === null || str === undefined) return '""';
+      const s = String(str);
+      return '"' + s.replace(/"/g, '""') + '"';
+    };
+
+    const rows = evaluatedCandidates.map(({ candidate: p, result }) => {
+      const title = p.currentTitle || p.jobTitle || p.headline || '';
+      const url = p.linkedinUrl || p.url || '';
+      const score = result.score;
+      const reasoning = result.reasoning;
+      return [score, p.firstName || '', p.lastName || '', title, url, reasoning].map(escapeCsv).join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `AI_Evaluated_Leaderboard_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
   // Template loaders
   const loadTemplate = (title) => {
     let jd = "";
@@ -258,24 +290,36 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
         </div>
         
         {Object.keys(agentResults).length > 0 && (
-          <button 
-            onClick={handleCommitToDatabase} 
-            style={{ 
-              padding: '10px 20px', 
-              backgroundColor: 'var(--accent)', 
-              color: 'var(--accent-fg)', 
-              border: 'none', 
-              borderRadius: '6px', 
-              cursor: 'pointer', 
-              fontSize: '13px', 
-              fontWeight: '500',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--accent)'}
-          >
-            Commit Scores to Database
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              onClick={downloadLeaderboardCSV} 
+              title="Export Leaderboard CSV"
+              style={{ 
+                padding: '10px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', 
+                borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px'
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            </button>
+            <button 
+              onClick={handleCommitToDatabase} 
+              title="Commit Scores to Database"
+              style={{ 
+                padding: '10px', 
+                backgroundColor: 'var(--accent)', 
+                color: 'var(--accent-fg)', 
+                border: 'none', 
+                borderRadius: '6px', 
+                cursor: 'pointer', 
+                transition: 'all 0.2s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px'
+              }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--accent-hover)'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--accent)'}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            </button>
+          </div>
         )}
       </div>
 
@@ -292,12 +336,13 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
                 </div>
                 <button 
                   onClick={handleSaveConfig}
+                  title="Save Preset"
                   style={{
-                    padding: '8px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)',
-                    borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500'
+                    padding: '8px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)',
+                    borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px'
                   }}
                 >
-                  Save Preset
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                 </button>
               </div>
               
@@ -399,18 +444,26 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
 
                   <button
                     onClick={handleRunAgent}
+                    title="Launch Autonomous Evaluation"
                     disabled={isRunning || evaluationTargets.length === 0}
                     style={{
-                      width: '100%', padding: '16px',
+                      width: '100%', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                       backgroundColor: isRunning ? 'var(--border-color)' : evaluationTargets.length === 0 ? 'var(--bg-surface)' : 'var(--accent)',
                       color: evaluationTargets.length === 0 && !isRunning ? 'var(--text-secondary)' : 'var(--accent-fg)',
-                      border: evaluationTargets.length === 0 ? '1px solid var(--border-color)' : 'none', borderRadius: '8px', fontSize: '15px', fontWeight: '600',
+                      border: evaluationTargets.length === 0 ? '1px solid var(--border-color)' : 'none', borderRadius: '8px',
                       cursor: isRunning || evaluationTargets.length === 0 ? 'not-allowed' : 'pointer',
                       transition: 'background-color 0.2s, transform 0.1s',
                       boxShadow: evaluationTargets.length > 0 && !isRunning ? '0 4px 14px 0 rgba(0,229,255,0.39)' : 'none'
                     }}
                   >
-                    Launch Autonomous Evaluation
+                    {isRunning ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                        <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
+                      </svg>
+                    ) : (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    )}
                   </button>
                 </div>
               </div>
