@@ -583,10 +583,13 @@ function SearchPage({ masterLeads, setMasterLeads }) {
                   onKeyDown={e => e.key === 'Enter' ? (e.preventDefault(), handleAddCustomSkill()) : null}
                   style={{ ...inputStyle, width: '140px' }}
                 />
-                <button type="button" onClick={handleAddCustomSkill} style={{
-                  padding: '0 16px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none',
-                  borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
-                }}>Add</button>
+                <button type="button" onClick={handleAddCustomSkill} title="Add custom skill" style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '36px', height: '36px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none',
+                  borderRadius: '6px', cursor: 'pointer'
+                }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
               </div>
             </div>
 

@@ -796,10 +796,24 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
             )}
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', whiteSpace: 'nowrap', marginLeft: '8px' }}>
-            <input type="checkbox" id="filterOTW" checked={filterOpenToWork} onChange={e => setFilterOpenToWork(e.target.checked)}
-              style={{ width: '14px', height: '14px', accentColor: 'var(--accent)', cursor: 'pointer' }} />
-            <label htmlFor="filterOTW" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>Open to Work</label>
+          <div
+            onClick={() => setFilterOpenToWork(!filterOpenToWork)}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}
+          >
+            <div style={{
+              width: '36px', height: '20px', backgroundColor: filterOpenToWork ? 'var(--accent)' : 'var(--bg-surface)',
+              borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s',
+              border: `1px solid ${filterOpenToWork ? 'var(--accent)' : 'var(--border-color)'}`
+            }}>
+              <div style={{
+                width: '14px', height: '14px', backgroundColor: filterOpenToWork ? 'var(--accent-fg)' : 'var(--text-secondary)',
+                borderRadius: '50%', position: 'absolute', top: '2px', left: filterOpenToWork ? '18px' : '2px',
+                transition: 'all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+              }} />
+            </div>
+            <span style={{ fontSize: '13px', fontWeight: '500', color: filterOpenToWork ? 'var(--text-primary)' : 'var(--text-secondary)', userSelect: 'none', transition: 'color 0.2s' }}>
+              Open to Work
+            </span>
           </div>
 
         </div>
@@ -849,12 +863,14 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
               <button
                 type="button"
                 onClick={handleAddCustomFilterSkill}
+                title="Add custom skill"
                 style={{
-                  padding: '8px 16px', backgroundColor: 'var(--text-primary)', color: 'var(--bg-main)',
-                  border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '35px', height: '35px', backgroundColor: 'var(--text-primary)', color: 'var(--bg-main)',
+                  border: 'none', borderRadius: '6px', cursor: 'pointer'
                 }}
               >
-                Add
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               </button>
             </div>
 
