@@ -48,6 +48,24 @@ export function extractSkillsList(profile) {
   return safeExtractText(profile.skills).replace(/[\r\n,"]/g, ' ');
 }
 
+export function matchSkillFlexible(text, query) {
+  if (!text || !query) return false;
+  const tLower = text.toLowerCase();
+  const qLower = query.toLowerCase();
+
+  if (tLower.includes(qLower)) return true;
+
+  const normT = tLower.replace(/[\s\.\-_]/g, '');
+  const normQ = qLower.replace(/[\s\.\-_]/g, '');
+  if (normT.includes(normQ)) return true;
+
+  const genStrippedQ = normQ.replace(/gen/g, '');
+  const genStrippedT = normT.replace(/gen/g, '');
+  if (genStrippedT.includes(genStrippedQ)) return true;
+
+  return false;
+}
+
 function getScoreColor(score) {
   if (score >= 70) return { bg: 'rgba(22, 163, 74, 0.15)', text: '#4ade80', border: 'rgba(74, 222, 128, 0.3)' };
   if (score >= 40) return { bg: 'rgba(217, 119, 6, 0.15)', text: '#fbbf24', border: 'rgba(251, 191, 36, 0.3)' };
@@ -620,22 +638,25 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
 
     // Text search across name, title, skills, about
     if (searchText.trim()) {
-      const q = searchText.toLowerCase();
+      const q = searchText.trim();
       results = results.filter(p => {
-        const name = `${safeExtractText(p.firstName)} ${safeExtractText(p.lastName)}`.toLowerCase();
-        const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline).toLowerCase();
-        const skills = extractSkillsList(p).toLowerCase();
-        const about = safeExtractText(p.about || p.summary).toLowerCase();
-        const loc = safeExtractText(p.location).toLowerCase();
-        return name.includes(q) || title.includes(q) || skills.includes(q) || about.includes(q) || loc.includes(q);
+        const name = `${safeExtractText(p.firstName)} ${safeExtractText(p.lastName)}`;
+        const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
+        const skills = extractSkillsList(p);
+        const about = safeExtractText(p.about || p.summary);
+        const loc = safeExtractText(p.location);
+        return matchSkillFlexible(name, q) || matchSkillFlexible(title, q) || matchSkillFlexible(skills, q) || matchSkillFlexible(about, q) || matchSkillFlexible(loc, q);
       });
     }
 
-    // Skill filter (must have ALL selected skills)
+    // Skill filter (must match selected skills flexibly)
     if (filterSkills.length > 0) {
       results = results.filter(p => {
-        const skills = extractSkillsList(p).toLowerCase();
-        return filterSkills.every(skill => skills.includes(skill.toLowerCase()));
+        const skills = extractSkillsList(p);
+        const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
+        const about = safeExtractText(p.about || p.summary);
+        const fullText = `${skills} ${title} ${about}`;
+        return filterSkills.every(skill => matchSkillFlexible(fullText, skill));
       });
     }
 

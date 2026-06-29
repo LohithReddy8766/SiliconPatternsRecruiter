@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { runCandidateAgent } from './agent.js';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
-import { extractSkillsList } from './CandidatesPage.jsx';
+import { extractSkillsList, matchSkillFlexible } from './CandidatesPage.jsx';
 
 export default function AIAgentPage({ masterLeads, setMasterLeads }) {
   const navigate = useNavigate();
@@ -24,8 +24,11 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
     if (targetSkills.length === 0) return [];
     let results = [...masterLeads];
     results = results.filter(p => {
-      const skillsStr = extractSkillsList(p).toLowerCase();
-      return targetSkills.every(skill => skillsStr.includes(skill.toLowerCase()));
+      const skillsStr = extractSkillsList(p);
+      const titleStr = p.currentTitle || p.jobTitle || p.headline || '';
+      const aboutStr = p.about || p.summary || '';
+      const fullText = `${skillsStr} ${titleStr} ${aboutStr}`;
+      return targetSkills.every(skill => matchSkillFlexible(fullText, skill));
     });
     return results.map((candidate) => ({ candidate, idx: masterLeads.indexOf(candidate) }));
   }, [masterLeads, targetSkills]);

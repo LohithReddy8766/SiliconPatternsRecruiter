@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
-import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider, useAuth } from './AuthContext';
 import LoginPage from './LoginPage';
 import AdminPage from './AdminPage';
@@ -277,7 +276,7 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
         {[
           { label: 'Discovery', path: '/search', active: isSearch, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> },
           { label: candidateCount > 0 ? `Talent Pool (${candidateCount})` : 'Talent Pool', path: '/candidates', active: isCandidates, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> },
-          { label: 'Evaluation', path: '/agent', active: location.pathname === '/agent', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> },
+          { label: 'Evaluation', path: '/agent', active: location.pathname === '/agent', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="15" x2="23" y2="15"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="15" x2="4" y2="15"></line></svg> },
           { label: 'Recruitment', path: '/pipeline', active: location.pathname === '/pipeline', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg> },
           { label: 'Insights', path: '/analytics', active: location.pathname === '/analytics', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> },
           ...(currentUser?.role === 'admin' ? [{ label: 'Admin Dashboard', path: '/admin', active: location.pathname === '/admin', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg> }] : [])
@@ -397,11 +396,11 @@ function SearchPage({ masterLeads, setMasterLeads }) {
 
     try {
       const expandSkillForQuery = (skill) => {
-        const matchGen = skill.match(/^(.+?)\s+Gen(\d+)$/i);
+        const matchGen = skill.match(/^(.+?)\s*Gen\s*(\d+)$/i);
         if (matchGen) {
-          const base = matchGen[1];
-          const gen = matchGen[2];
-          return `("${skill}" OR "${base} Gen ${gen}" OR "${base} ${gen}.0" OR "${base} ${gen}")`;
+          const base = matchGen[1].trim();
+          const gen = matchGen[2].trim();
+          return `("${skill}" OR "${base} Gen ${gen}" OR "${base} Gen${gen}" OR "${base} ${gen}.0" OR "${base} ${gen}")`;
         }
         return `"${skill}"`;
       };
@@ -818,15 +817,19 @@ export default function App() {
 
   // Load configuration on mount
   useEffect(() => {
-    const dbMode = localStorage.getItem('siliconPatternsDbMode') === 'supabase';
-    const dbUrl = localStorage.getItem('siliconPatternsSupabaseUrl') || '';
-    const dbKey = localStorage.getItem('siliconPatternsSupabaseKey') || '';
+    const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
+    const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    const dbModeStored = localStorage.getItem('siliconPatternsDbMode');
 
-    setUseSupabase(dbMode);
+    const dbUrl = localStorage.getItem('siliconPatternsSupabaseUrl') || envUrl;
+    const dbKey = localStorage.getItem('siliconPatternsSupabaseKey') || envKey;
+    const dbMode = (envUrl && envKey) || (dbUrl && dbKey && dbModeStored !== 'local');
+
+    setUseSupabase(!!dbMode);
     setSupabaseUrl(dbUrl);
     setSupabaseKey(dbKey);
 
-    setInputUseSupabase(dbMode);
+    setInputUseSupabase(!!dbMode);
     setInputUrl(dbUrl);
     setInputKey(dbKey);
     setInputApifyKey(localStorage.getItem('siliconPatternsApifyKey') || '');
@@ -983,9 +986,8 @@ export default function App() {
 alter table candidates disable row level security;`;
 
   return (
-    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || 'dummy-client-id'}>
-      <AuthProvider>
-        <Routes>
+    <AuthProvider>
+      <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/*" element={
             <ProtectedRoute>
@@ -1189,6 +1191,5 @@ alter table candidates disable row level security;`;
           } />
         </Routes>
       </AuthProvider>
-    </GoogleOAuthProvider>
   );
 }
