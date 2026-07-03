@@ -40,6 +40,7 @@ export async function fetchCandidatesFromSupabase(url, key) {
     status: item.status || 'sourced',
     agentScore: item.agent_score !== null ? item.agent_score : undefined,
     agentReasoning: item.agent_reasoning || undefined,
+    assignedRecruiterEmail: item.assigned_recruiter_email || '',
     linkedinUrl: item.linkedin_url,
     url: item.linkedin_url,
     ...(item.profile_data || {}) // merge any additional fields stored inside profile_data JSONB
@@ -62,7 +63,7 @@ export async function upsertCandidatesToSupabase(url, key, candidates) {
     // Filter out extra keys to avoid clogging the main columns, save them in profile_data
     const { 
       firstName, lastName, headline, currentTitle, jobTitle, location, 
-      matchScore, status, agentScore, agentReasoning, ...extraData 
+      matchScore, status, agentScore, agentReasoning, assignedRecruiterEmail, assigned_recruiter_email, ...extraData 
     } = c;
 
     return {
@@ -76,6 +77,7 @@ export async function upsertCandidatesToSupabase(url, key, candidates) {
       status: status || 'sourced',
       agent_score: agentScore !== undefined ? agentScore : null,
       agent_reasoning: agentReasoning || null,
+      assigned_recruiter_email: assignedRecruiterEmail || assigned_recruiter_email || null,
       profile_data: extraData || {}
     };
   });
@@ -124,4 +126,74 @@ export async function deleteCandidateFromSupabase(url, key, candidate) {
     const errText = await res.text();
     throw new Error(`Failed to delete candidate: ${errText || res.statusText}`);
   }
+}
+
+/**
+ * Log recruiter activity to 'recruiter_activities' in Supabase
+ */
+export async function logRecruiterActivity(url, key, activity) {
+  if (!url || !key) return;
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  
+  const payload = {
+    recruiter_email: activity.recruiterEmail,
+    candidate_linkedin_url: cleanUrl(activity.candidateLinkedinUrl || activity.candidateUrl),
+    candidate_name: activity.candidateName || 'Candidate',
+    action_type: activity.actionType,
+    from_stage: activity.fromStage || null,
+    to_stage: activity.toStage || null,
+    skills: activity.skills || []
+  };
+
+  try {
+    const res = await fetch(`${cleanBaseUrl}/rest/v1/recruiter_activities`, {
+      method: 'POST',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      console.warn(`Failed to log recruiter activity: ${await res.text()}`);
+    }
+  } catch (err) {
+    console.error('Error logging recruiter activity:', err);
+  }
+}
+
+/**
+ * Fetch recruiter activities from Supabase
+ */
+export async function fetchRecruiterActivities(url, key) {
+  if (!url || !key) return [];
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/recruiter_activities?select=*&order=created_at.desc`, {
+    method: 'GET',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`
+    }
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Failed to fetch recruiter activities: ${errText || res.statusText}`);
+  }
+
+  const data = await res.json();
+  return data.map(item => ({
+    id: item.id,
+    recruiterEmail: item.recruiter_email,
+    candidateLinkedinUrl: item.candidate_linkedin_url,
+    candidateName: item.candidate_name,
+    actionType: item.action_type,
+    fromStage: item.from_stage,
+    toStage: item.to_stage,
+    skills: item.skills || [],
+    createdAt: item.created_at
+  }));
 }
