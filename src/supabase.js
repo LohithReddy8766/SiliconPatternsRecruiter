@@ -197,3 +197,170 @@ export async function fetchRecruiterActivities(url, key) {
     createdAt: item.created_at
   }));
 }
+
+/**
+ * Check if an email is in the approved_emails allowlist
+ */
+export async function checkEmailApproved(url, key, email) {
+  if (!url || !key || !email) return false;
+  const cleanEmail = email.toLowerCase().trim();
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/approved_emails?email=eq.${encodeURIComponent(cleanEmail)}&select=email`, {
+    method: 'GET',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`
+    }
+  });
+
+  if (!res.ok) {
+    console.error(`Failed to check email approval: ${await res.text()}`);
+    return false;
+  }
+
+  const data = await res.json();
+  return data.length > 0;
+}
+
+/**
+ * Get all approved emails
+ */
+export async function getApprovedEmails(url, key) {
+  if (!url || !key) return [];
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/approved_emails?select=*`, {
+    method: 'GET',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch approved emails: ${await res.text()}`);
+  }
+
+  return await res.json();
+}
+
+/**
+ * Add an email to the allowlist
+ */
+export async function addApprovedEmail(url, key, email) {
+  if (!url || !key || !email) return;
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  
+  const payload = {
+    email: email.toLowerCase().trim()
+  };
+
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/approved_emails`, {
+    method: 'POST',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to add approved email: ${await res.text()}`);
+  }
+}
+
+/**
+ * Remove an email from the allowlist
+ */
+export async function removeApprovedEmail(url, key, email) {
+  if (!url || !key || !email) return;
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  const cleanEmail = email.toLowerCase().trim();
+
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/approved_emails?email=eq.${encodeURIComponent(cleanEmail)}`, {
+    method: 'DELETE',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to remove approved email: ${await res.text()}`);
+  }
+}
+
+/**
+ * Get all pending user requests
+ */
+export async function getPendingUsers(url, key) {
+  if (!url || !key) return [];
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/pending_users?select=*`, {
+    method: 'GET',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`
+    }
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Failed to fetch pending users: ${errText}`);
+  }
+
+  return await res.json();
+}
+
+/**
+ * Add an email to the pending list
+ */
+export async function addPendingUser(url, key, email) {
+  if (!url || !key || !email) return;
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  
+  const payload = {
+    email: email.toLowerCase().trim()
+  };
+
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/pending_users`, {
+    method: 'POST',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Failed to add pending user: ${errText}`);
+  }
+}
+
+/**
+ * Remove an email from the pending list
+ */
+export async function removePendingUser(url, key, email) {
+  if (!url || !key || !email) return;
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  const cleanEmail = email.toLowerCase().trim();
+
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/pending_users?email=eq.${encodeURIComponent(cleanEmail)}`, {
+    method: 'DELETE',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to remove pending user: ${await res.text()}`);
+  }
+}

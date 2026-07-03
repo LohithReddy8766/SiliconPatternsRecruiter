@@ -4,13 +4,20 @@ import { useAuth } from './AuthContext';
 import { downloadCandidateResume } from './CandidatesPage.jsx';
 
 export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }) {
-  const { currentUser, registeredUsers, deleteUser } = useAuth();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   
   const [activeTab, setActiveTab] = useState('performance');
   const [activities, setActivities] = useState([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
   const [viewingCandidates, setViewingCandidates] = useState(null);
+
+  const [approvedEmails, setApprovedEmails] = useState([]);
+  const [loadingEmails, setLoadingEmails] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [loadingPending, setLoadingPending] = useState(false);
 
   // Guard (Admin only)
   if (!currentUser || currentUser.role !== 'admin') {
@@ -44,37 +51,85 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
     }
   }, [activeTab, supabaseUrl, supabaseKey]);
 
-  const handleDelete = (email) => {
-    if (email === currentUser.email) {
-      alert("You cannot delete your own active session.");
-      return;
+  // Load approved and pending emails
+  useEffect(() => {
+    if (activeTab === 'access' && supabaseUrl && supabaseKey) {
+      setLoadingEmails(true);
+      setLoadingPending(true);
+      import('./supabase.js').then(({ getApprovedEmails, getPendingUsers }) => {
+        getApprovedEmails(supabaseUrl, supabaseKey)
+          .then(data => setApprovedEmails(data))
+          .catch(err => console.error("Failed to load approved emails:", err))
+          .finally(() => setLoadingEmails(false));
+          
+        getPendingUsers(supabaseUrl, supabaseKey)
+          .then(data => setPendingUsers(data))
+          .catch(err => {
+            console.error("Failed to load pending users:", err);
+            alert("Database Error loading pending users: " + err.message);
+          })
+          .finally(() => setLoadingPending(false));
+      }).catch(err => {
+        console.error("Failed to import supabase module:", err);
+        setLoadingEmails(false);
+        setLoadingPending(false);
+      });
     }
-    if (window.confirm(`Are you sure you want to delete the account for ${email}? They will no longer be able to log in.`)) {
-      deleteUser(email);
+  }, [activeTab, supabaseUrl, supabaseKey]);
+
+  const handleAddEmail = async (e) => {
+    e.preventDefault();
+    if (!newEmail.trim() || !supabaseUrl || !supabaseKey) return;
+    try {
+      const { addApprovedEmail } = await import('./supabase.js');
+      await addApprovedEmail(supabaseUrl, supabaseKey, newEmail);
+      setApprovedEmails(prev => [...prev, { email: newEmail.toLowerCase().trim() }]);
+      setNewEmail('');
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleRemoveEmail = async (emailToRemove) => {
+    if (!supabaseUrl || !supabaseKey) return;
+    if (!window.confirm(`Remove ${emailToRemove} from allowlist?`)) return;
+    try {
+      const { removeApprovedEmail } = await import('./supabase.js');
+      await removeApprovedEmail(supabaseUrl, supabaseKey, emailToRemove);
+      setApprovedEmails(prev => prev.filter(e => e.email !== emailToRemove));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleApprovePending = async (emailToApprove) => {
+    if (!supabaseUrl || !supabaseKey) return;
+    try {
+      const { addApprovedEmail, removePendingUser } = await import('./supabase.js');
+      await addApprovedEmail(supabaseUrl, supabaseKey, emailToApprove);
+      await removePendingUser(supabaseUrl, supabaseKey, emailToApprove);
+      setApprovedEmails(prev => [...prev, { email: emailToApprove.toLowerCase().trim() }]);
+      setPendingUsers(prev => prev.filter(e => e.email !== emailToApprove));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleDenyPending = async (emailToDeny) => {
+    if (!supabaseUrl || !supabaseKey) return;
+    if (!window.confirm(`Deny access for ${emailToDeny}?`)) return;
+    try {
+      const { removePendingUser } = await import('./supabase.js');
+      await removePendingUser(supabaseUrl, supabaseKey, emailToDeny);
+      setPendingUsers(prev => prev.filter(e => e.email !== emailToDeny));
+    } catch (err) {
+      alert(err.message);
     }
   };
 
   // Group candidates by recruiter
   const recruiterStats = React.useMemo(() => {
     const stats = {};
-    
-    // Seed with all registered users to make sure they show up in analytics even if 0 cands
-    registeredUsers.forEach(user => {
-      stats[user.email.toLowerCase()] = {
-        name: user.name,
-        email: user.email,
-        picture: user.picture,
-        sourced: 0,
-        reached_out: 0,
-        interviewing: 0,
-        offer: 0,
-        hired: 0,
-        rejected: 0,
-        others: 0,
-        total: 0,
-        skills: new Set()
-      };
-    });
 
     // Make sure we have a fallback for dev/unassigned
     const fallbackEmail = 'dev@siliconpatterns.com';
@@ -154,7 +209,7 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
     });
 
     return Object.values(stats);
-  }, [masterLeads, registeredUsers]);
+  }, [masterLeads]);
 
   // Clean transition naming for timeline activity
   const formatActionDescription = (act) => {
@@ -201,20 +256,20 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
           Team Performance Analytics
         </button>
         <button
-          onClick={() => setActiveTab('accounts')}
+          onClick={() => setActiveTab('access')}
           style={{
             border: 'none', background: 'none', padding: '12px 16px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
-            color: activeTab === 'accounts' ? 'var(--accent)' : 'var(--text-secondary)',
-            borderBottom: activeTab === 'accounts' ? '2.5px solid var(--accent)' : '2.5px solid transparent',
+            color: activeTab === 'access' ? 'var(--accent)' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'access' ? '2.5px solid var(--accent)' : '2.5px solid transparent',
             transition: 'all 0.15s ease'
           }}
         >
-          Manage User Accounts ({registeredUsers.length})
+          Access Management
         </button>
       </div>
 
       {/* Tab Contents */}
-      {activeTab === 'performance' ? (
+      {activeTab === 'performance' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
           
           {/* Recruiter Stats Section */}
@@ -348,8 +403,7 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
                   
                   {activities.slice(0, 30).map((act, idx) => {
                     const recruiterName = act.recruiterEmail.split('@')[0];
-                    const recUser = registeredUsers.find(u => u.email.toLowerCase() === act.recruiterEmail.toLowerCase());
-                    const avatarUrl = recUser?.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(recruiterName)}&background=random`;
+                    const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(recruiterName)}&background=random`;
 
                     return (
                       <div key={idx} style={{ display: 'flex', gap: '16px', position: 'relative', zIndex: 1, alignItems: 'flex-start' }}>
@@ -378,74 +432,124 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
           </div>
 
         </div>
-      ) : (
-        /* User Accounts management (Original Admin Table) */
-        <div style={{
-          backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden'
-        }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ backgroundColor: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)' }}>
-                <th style={{ padding: '16px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>User</th>
-                <th style={{ padding: '16px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email</th>
-                <th style={{ padding: '16px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Role</th>
-                <th style={{ padding: '16px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Created</th>
-                <th style={{ padding: '16px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {registeredUsers.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px' }}>
-                    No users registered yet.
-                  </td>
-                </tr>
-              ) : (
-                registeredUsers.map((user, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <img 
-                        src={user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`} 
-                        alt={user.name}
-                        style={{ width: '32px', height: '32px', borderRadius: '50%' }}
-                      />
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{user.name}</span>
-                    </td>
-                    <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                      {user.email}
-                    </td>
-                    <td style={{ padding: '16px' }}>
-                      <span style={{ 
-                        padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase',
-                        backgroundColor: user.role === 'admin' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(96, 165, 250, 0.15)',
-                        color: user.role === 'admin' ? '#c084fc' : '#60a5fa',
-                        border: user.role === 'admin' ? '1px solid rgba(192, 132, 252, 0.3)' : '1px solid rgba(96, 165, 250, 0.3)'
-                      }}>
-                        {user.role}
-                      </span>
-                    </td>
-                    <td style={{ padding: '16px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                      {new Date(user.createdAt).toLocaleDateString()}
-                    </td>
-                    <td style={{ padding: '16px', textAlign: 'right' }}>
-                      <button
-                        onClick={() => handleDelete(user.email)}
-                        disabled={user.email === currentUser.email}
-                        style={{
-                          padding: '6px 12px', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '6px',
-                          backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171',
-                          cursor: user.email === currentUser.email ? 'not-allowed' : 'pointer',
-                          fontSize: '12px', fontWeight: '600', opacity: user.email === currentUser.email ? 0.5 : 1
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </td>
+      )}
+
+      {activeTab === 'access' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* Pending Approvals */}
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', textAlign: 'left' }}>
+              Pending Access Requests
+            </h3>
+            <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'left' }}>
+              These users have created accounts and are waiting for administrator approval to access the workspace.
+            </p>
+
+            <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)' }}>
+                    <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>Email Address</th>
+                    <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {loadingPending ? (
+                    <tr>
+                      <td colSpan="2" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading pending requests...</td>
+                    </tr>
+                  ) : pendingUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan="2" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>No pending requests.</td>
+                    </tr>
+                  ) : (
+                    pendingUsers.map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '12px 16px', fontSize: '14px', color: 'var(--text-primary)', fontWeight: '500' }}>{item.email}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button
+                            onClick={() => handleApprovePending(item.email)}
+                            style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.3)', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#34d399', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleDenyPending(item.email)}
+                            style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(248, 113, 113, 0.3)', backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                          >
+                            Deny
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', textAlign: 'left' }}>
+              Approved Emails Allowlist
+            </h3>
+            <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'left' }}>
+              Only emails listed here will be allowed to receive OTP verification codes to log in.
+            </p>
+
+            <form onSubmit={handleAddEmail} style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+              <input 
+                type="email" 
+                required
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                placeholder="developer@siliconpatterns.com"
+                style={{ flex: 1, padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', fontSize: '14px' }}
+              />
+              <button 
+                type="submit"
+                style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                Add Email
+              </button>
+            </form>
+
+            <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)' }}>
+                    <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>Email Address</th>
+                    <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingEmails ? (
+                    <tr>
+                      <td colSpan="2" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading allowlist...</td>
+                    </tr>
+                  ) : approvedEmails.length === 0 ? (
+                    <tr>
+                      <td colSpan="2" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>No approved emails yet.</td>
+                    </tr>
+                  ) : (
+                    approvedEmails.map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '12px 16px', fontSize: '14px', color: 'var(--text-primary)', fontWeight: '500' }}>{item.email}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          <button
+                            onClick={() => handleRemoveEmail(item.email)}
+                            style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(248, 113, 113, 0.3)', backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
