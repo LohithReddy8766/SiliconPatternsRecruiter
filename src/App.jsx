@@ -355,8 +355,9 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
   );
 }
 
-function SearchPage({ masterLeads, setMasterLeads }) {
+function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [selectedSkills, setSelectedSkills] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [location, setLocation] = useState([]);
@@ -484,6 +485,7 @@ function SearchPage({ masterLeads, setMasterLeads }) {
             isOpenToWork: profile.isOpenToWork,
             matchScore: null,
             status: 'sourced',
+            assignedRecruiterEmail: currentUser?.email || 'dev@siliconpatterns.com',
             _searchedDesignation: designation.join(', '),
             _searchedLocation: location.join(', '),
             _searchedSkills: [...selectedSkills],
@@ -498,6 +500,37 @@ function SearchPage({ masterLeads, setMasterLeads }) {
         setStatus('Search complete — all candidates already in your Master Database.');
         setLoading(false);
         return;
+      }
+
+      // Log sourcing activities to Supabase if connected
+      const dbUrl = supabaseUrl || localStorage.getItem('siliconPatternsSupabaseUrl');
+      const dbKey = supabaseKey || localStorage.getItem('siliconPatternsSupabaseKey');
+      if (dbUrl && dbKey) {
+        try {
+          const { logRecruiterActivity } = await import('./supabase.js');
+          const recruiterEmail = currentUser?.email || 'dev@siliconpatterns.com';
+          
+          for (const p of newUniqueProfiles) {
+            let skillArray = [];
+            if (p.skills) {
+              if (Array.isArray(p.skills)) {
+                skillArray = p.skills.map(s => typeof s === 'string' ? s : (s.name || s.title || '')).filter(Boolean);
+              } else {
+                skillArray = String(p.skills).split(',').map(s => s.trim()).filter(Boolean);
+              }
+            }
+
+            await logRecruiterActivity(dbUrl, dbKey, {
+              recruiterEmail,
+              candidateLinkedinUrl: p.linkedinUrl || p.url,
+              candidateName: `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Candidate',
+              actionType: 'sourced',
+              skills: skillArray
+            });
+          }
+        } catch (activityError) {
+          console.error("Failed to log activity:", activityError);
+        }
       }
 
       const getEffectiveScore = (p) => (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : 0;
@@ -997,12 +1030,12 @@ alter table candidates disable row level security;`;
                 <div style={{ flex: 1, overflowY: 'auto' }}>
                   <Routes>
                     <Route path="/" element={<Navigate to="/search" replace />} />
-                    <Route path="/search" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+                    <Route path="/search" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />} />
                     <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
                     <Route path="/agent" element={<AIAgentPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-                    <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
+                    <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />} />
                     <Route path="/analytics" element={<AnalyticsPage masterLeads={masterLeads} />} />
-                    <Route path="/admin" element={<AdminPage />} />
+                    <Route path="/admin" element={<AdminPage masterLeads={masterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />} />
                   </Routes>
                 </div>
 

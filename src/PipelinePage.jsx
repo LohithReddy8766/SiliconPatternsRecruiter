@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { downloadCandidateResume } from './CandidatesPage.jsx';
+import { useAuth } from './AuthContext';
 
 const PIPELINE_STAGES = [
   { id: 'sourced', label: 'Sourced', color: 'var(--text-secondary)', bg: 'var(--bg-surface)', border: 'var(--border-color)', text: 'var(--text-secondary)' },
@@ -10,8 +12,9 @@ const PIPELINE_STAGES = [
   { id: 'rejected', label: 'Rejected', color: '#f87171', bg: 'rgba(220, 38, 38, 0.15)', border: 'rgba(248, 113, 113, 0.3)', text: '#f87171' }
 ];
 
-export default function PipelinePage({ masterLeads, setMasterLeads }) {
+export default function PipelinePage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [viewingReasoning, setViewingReasoning] = useState(null);
   const [pipelineSearch, setPipelineSearch] = useState('');
 
@@ -23,18 +26,49 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
   // Move candidate to a new stage
   const moveCandidate = (candidate, newStageId) => {
     const candidateUrl = candidate.linkedinUrl || candidate.url || '';
+    const oldStage = candidate.status || 'sourced';
     
     const updatedLeads = masterLeads.map(lead => {
       const leadUrl = lead.linkedinUrl || lead.url || '';
       // Unique identifier match
       if (leadUrl === candidateUrl && (lead.firstName === candidate.firstName && lead.lastName === candidate.lastName)) {
-        return { ...lead, status: newStageId };
+        return { 
+          ...lead, 
+          status: newStageId,
+          assignedRecruiterEmail: lead.assignedRecruiterEmail || currentUser?.email || 'dev@siliconpatterns.com'
+        };
       }
       return lead;
     });
 
     setMasterLeads(updatedLeads);
     localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(updatedLeads));
+
+    // Log stage change activity if online
+    const dbUrl = supabaseUrl || localStorage.getItem('siliconPatternsSupabaseUrl');
+    const dbKey = supabaseKey || localStorage.getItem('siliconPatternsSupabaseKey');
+    if (dbUrl && dbKey) {
+      import('./supabase.js').then(({ logRecruiterActivity }) => {
+        let skillArray = [];
+        if (candidate.skills) {
+          if (Array.isArray(candidate.skills)) {
+            skillArray = candidate.skills.map(s => typeof s === 'string' ? s : (s.name || s.title || '')).filter(Boolean);
+          } else {
+            skillArray = String(candidate.skills).split(',').map(s => s.trim()).filter(Boolean);
+          }
+        }
+
+        logRecruiterActivity(dbUrl, dbKey, {
+          recruiterEmail: currentUser?.email || 'dev@siliconpatterns.com',
+          candidateLinkedinUrl: candidateUrl,
+          candidateName: `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || 'Candidate',
+          actionType: 'stage_change',
+          fromStage: oldStage,
+          toStage: newStageId,
+          skills: skillArray
+        }).catch(e => console.error(e));
+      });
+    }
   };
 
   // Handle stage change from dropdown selector
@@ -341,7 +375,7 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                           <button
                             onClick={() => navigate('/candidates', { state: { highlightCandidateUrl: candidate.linkedinUrl || candidate.url } })}
                             style={{
-                              width: '100%', padding: '4px 0', border: '1px solid var(--border-color)', borderRadius: '4px',
+                              flexGrow: 1, padding: '4px 0', border: '1px solid var(--border-color)', borderRadius: '4px',
                               backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', cursor: 'pointer',
                               fontSize: '10px', fontWeight: '500', transition: 'background-color 0.1s'
                             }}
@@ -349,6 +383,25 @@ export default function PipelinePage({ masterLeads, setMasterLeads }) {
                             onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--bg-main)'}
                           >
                             View Details
+                          </button>
+                          <button
+                            onClick={() => downloadCandidateResume(candidate)}
+                            title="Download Word Resume"
+                            style={{
+                              padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px',
+                              backgroundColor: 'var(--bg-main)', color: 'var(--text-secondary)', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.1s'
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+                              e.currentTarget.style.color = 'var(--text-primary)';
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.backgroundColor = 'var(--bg-main)';
+                              e.currentTarget.style.color = 'var(--text-secondary)';
+                            }}
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#2b579a' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><text x="6" y="18" fontSize="9" fontWeight="900" fontFamily="sans-serif" fill="#2b579a" stroke="none">W</text></svg>
                           </button>
                           {candidate.agentReasoning && (
                             <button

@@ -66,6 +66,141 @@ export function matchSkillFlexible(text, query) {
   return false;
 }
 
+export function downloadCandidateResume(profile) {
+  const name = `${safeExtractText(profile.firstName)} ${safeExtractText(profile.lastName)}`.trim();
+  const filename = `${name.replace(/\s+/g, '_')}_Resume.doc`;
+  
+  // Format skills
+  const skills = extractSkillsList(profile);
+  const skillsHtml = skills && skills !== 'N/A' && skills !== ''
+    ? skills.split(', ').map(s => `<span style="background-color: #f3f4f6; border: 1px solid #e5e7eb; padding: 4px 8px; border-radius: 4px; display: inline-block; margin: 2px; font-size: 11px; font-family: Arial, sans-serif; color: #374151;">${s}</span>`).join(' ')
+    : 'No skills documented';
+
+  // Format experience
+  let experienceHtml = '';
+  const positions = profile.positions || profile.experience || [];
+  if (Array.isArray(positions) && positions.length > 0) {
+    experienceHtml = positions.map(pos => {
+      const title = pos.title || 'Role';
+      const company = pos.companyName || pos.company || 'Company';
+      const duration = pos.duration || pos.date || '';
+      const desc = pos.description || '';
+      return `
+        <div style="margin-bottom: 16px; font-family: Arial, sans-serif;">
+          <table style="width: 100%; font-size: 13px; font-weight: bold; color: #111827;">
+            <tr>
+              <td style="text-align: left;">${title}</td>
+              <td style="text-align: right; font-weight: normal; color: #6b7280; font-size: 11px;">${duration}</td>
+            </tr>
+          </table>
+          <div style="font-size: 12px; font-style: italic; color: #4b5563; margin-bottom: 4px;">${company}</div>
+          ${desc ? `<div style="font-size: 12px; color: #4b5563; line-height: 1.4;">${desc}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } else {
+    experienceHtml = '<p style="font-size: 12px; color: #4b5563; font-style: italic;">No detailed work experience documented.</p>';
+  }
+
+  // Format education
+  let educationHtml = '';
+  const educations = profile.educations || profile.education || [];
+  if (Array.isArray(educations) && educations.length > 0) {
+    educationHtml = educations.map(edu => {
+      const degree = edu.degreeName || 'Degree';
+      const school = edu.schoolName || edu.school || 'Institution';
+      const date = edu.date || edu.duration || '';
+      return `
+        <div style="margin-bottom: 10px; font-size: 12px; font-family: Arial, sans-serif; color: #374151;">
+          <span style="font-weight: bold;">${degree}</span> — <span>${school}</span>
+          ${date ? `<span style="color: #6b7280; font-size: 11px; margin-left: 8px;">(${date})</span>` : ''}
+        </div>
+      `;
+    }).join('');
+  } else {
+    educationHtml = '<p style="font-size: 12px; color: #4b5563; font-style: italic;">No detailed education documented.</p>';
+  }
+
+  // Format AI Screening evaluation details if present
+  let aiSectionHtml = '';
+  if (profile.agentScore !== undefined && profile.agentScore !== null) {
+    aiSectionHtml = `
+      <div style="margin-top: 30px; padding: 16px; background-color: #faf5ff; border: 1px solid #e9d5ff; border-left: 5px solid #a855f7; border-radius: 6px; font-family: Arial, sans-serif;">
+        <h3 style="margin: 0 0 8px 0; color: #7e22ce; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Silicon Patterns AI Screening Assessment</h3>
+        <div style="font-size: 14px; font-weight: bold; color: #7e22ce; margin-bottom: 8px;">Screening Match Score: ${profile.agentScore} / 100</div>
+        ${profile.agentReasoning ? `
+          <div style="font-size: 12px; color: #581c87; line-height: 1.5; white-space: pre-line;">
+            <strong>Evaluation Rationale:</strong><br/>
+            ${profile.agentReasoning}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  const html = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' 
+          xmlns:w='urn:schemas-microsoft-com:office:word' 
+          xmlns='http://www.w3.org/TR/REC-html40'>
+    <head>
+      <meta charset="utf-8">
+      <title>${name} - Resume</title>
+      <!--[if gte mso 9]>
+      <xml>
+        <w:WordDocument>
+          <w:View>Print</w:View>
+          <w:Zoom>100</w:Zoom>
+        </w:WordDocument>
+      </xml>
+      <![endif]-->
+      <style>
+        body { font-family: 'Arial', sans-serif; line-height: 1.5; color: #374151; margin: 40px; }
+        h1 { color: #111827; font-size: 24px; margin-bottom: 2px; font-weight: bold; font-family: 'Arial', sans-serif; }
+        .title { font-size: 14px; color: #4b5563; margin-bottom: 8px; font-style: italic; font-family: 'Arial', sans-serif; }
+        .meta { font-size: 10px; color: #6b7280; margin-bottom: 24px; font-family: 'Arial', sans-serif; }
+        h2 { color: #4f46e5; font-size: 13px; font-weight: bold; margin-top: 24px; margin-bottom: 12px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; font-family: 'Arial', sans-serif; }
+        p { font-size: 12px; color: #374151; margin-top: 0; margin-bottom: 12px; line-height: 1.6; font-family: 'Arial', sans-serif; }
+      </style>
+    </head>
+    <body>
+      <div style="font-family: Arial, sans-serif;">
+        <h1>${name}</h1>
+        <div class="title">${safeExtractText(profile.currentTitle || profile.jobTitle || profile.headline)}</div>
+        <div class="meta">
+          ${safeExtractText(profile.location)} | ${safeExtractText(profile.linkedinUrl || profile.url)}
+        </div>
+        
+        <h2>Professional Summary</h2>
+        <p>${safeExtractText(profile.about || profile.summary || 'Semiconductor engineering professional.')}</p>
+        
+        <h2>Core Technical Skills</h2>
+        <div style="margin-bottom: 20px;">
+          ${skillsHtml}
+        </div>
+        
+        <h2>Professional Experience</h2>
+        ${experienceHtml}
+        
+        <h2>Education</h2>
+        ${educationHtml}
+        
+        ${aiSectionHtml}
+      </div>
+    </body>
+    </html>
+  `;
+
+  const blob = new Blob([html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function getScoreColor(score) {
   if (score >= 70) return { bg: 'rgba(22, 163, 74, 0.15)', text: '#4ade80', border: 'rgba(74, 222, 128, 0.3)' };
   if (score >= 40) return { bg: 'rgba(217, 119, 6, 0.15)', text: '#fbbf24', border: 'rgba(251, 191, 36, 0.3)' };
@@ -263,6 +398,27 @@ Generate the JSON outreach sequence now.`
                 textDecoration: 'none', flexShrink: 0,
               }}>in</a>
             )}
+            <button
+              onClick={() => downloadCandidateResume(profile)}
+              title="Download Word Resume"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: '30px', height: '30px',
+                backgroundColor: 'var(--bg-surface)', borderRadius: '6px', border: '1px solid var(--border-color)',
+                color: 'var(--text-secondary)', cursor: 'pointer', transition: 'all 0.15s',
+                flexShrink: 0,
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = 'var(--border-hover)';
+                e.currentTarget.style.color = 'var(--accent)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = 'var(--border-color)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#2b579a' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><text x="6" y="18" fontSize="9" fontWeight="900" fontFamily="sans-serif" fill="#2b579a" stroke="none">W</text></svg>
+            </button>
             <button
               onClick={() => setExpanded(v => !v)}
               style={{
