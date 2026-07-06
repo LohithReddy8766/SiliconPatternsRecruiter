@@ -62,7 +62,9 @@ function cleanUrl(url) {
 }
 
 export function isCandidateOpenToWork(profile) {
-  if (profile.isOpenToWork === true) return true;
+  // harvestapi returns this as `openToWork`; stored/legacy records use
+  // `isOpenToWork`. Check both before falling back to text heuristics.
+  if (profile.openToWork === true || profile.isOpenToWork === true) return true;
   const headline = safeExtractText(profile.headline).toLowerCase();
   const title = safeExtractText(profile.currentTitle || profile.jobTitle).toLowerCase();
   const about = safeExtractText(profile.about || profile.summary).toLowerCase();
@@ -91,13 +93,194 @@ const locationOptions = [
 const companyOptions = [
   "Intel", "AMD", "Qualcomm", "NVIDIA", "Apple", "Broadcom", "MediaTek", "Marvell", "Texas Instruments", "Arm"
 ];
+// harvestapi yearsOfExperienceIds is a fixed 1-5 scale. Value "6" is invalid
+// and silently breaks the run, so the options are mapped to the real buckets.
 const experienceOptions = [
+  { label: "Less than 1 year", value: "1" },
   { label: "Junior (1-2 years)", value: "2" },
   { label: "Mid-Level (3-5 years)", value: "3" },
-  { label: "Senior (5-7 years)", value: "4" },
-  { label: "Lead/Staff (7-10+ years)", value: "5" },
-  { label: "Director/Exec (12+ years)", value: "6" }
+  { label: "Senior (6-10 years)", value: "4" },
+  { label: "Lead/Staff (10+ years)", value: "5" }
 ];
+
+// --- Job Description auto-parsing ---------------------------------------
+// Short skills that are distinctive enough to keyword-match safely in the
+// local fallback parser (longer skills are matched by length; these are the
+// meaningful <4 char exceptions we don't want to drop).
+const SHORT_SKILL_ALLOWLIST = new Set([
+  'UVM', 'PCIe', 'DDR', 'AXI', 'JTAG', 'HLS', 'DFT', 'ATPG', 'BIST', 'MBIST',
+  'UPF', 'CPF', 'CXL', 'MIPI', 'UFS', 'HBM', 'GDDR', 'eMMC', 'NVMe', 'SATA',
+  'USB', 'STA', 'CTS', 'ECO', 'RTL', 'SoC', 'DDR2', 'DDR3', 'DDR4', 'DDR5'
+]);
+// FPGA/lab terms that aren't in the ASIC skills taxonomy but are worth
+// pulling out of a JD so FPGA roles autofill sensibly.
+const JD_EXTRA_TERMS = [
+  'FPGA', 'Vivado', 'Quartus', 'Quartus Prime', 'Xilinx', 'Altera', 'Alveo',
+  'Stratix', 'SignalTap', 'ChipScope', 'AXI', 'JTAG', 'Bitstream', 'HLS',
+  'OpenCL', 'SmartNIC', 'PCIe', 'DDR', 'Linux', 'RTL'
+];
+
+// Match a term as a whole word (so "C" doesn't hit every word, "CAN" doesn't
+// hit "can"). Treats +, # as word chars so "C++" / "C#" match correctly.
+function jdContainsTerm(text, term) {
+  const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    return new RegExp(`(?<![A-Za-z0-9+#])${esc}(?![A-Za-z0-9+#])`, 'i').test(text);
+  } catch {
+    return text.toLowerCase().includes(term.toLowerCase());
+  }
+}
+
+function yearsToExperienceId(years) {
+  if (years < 1) return '1';
+  if (years <= 2) return '2';
+  if (years <= 5) return '3';
+  if (years <= 10) return '4';
+  return '5';
+}
+
+function mapExperienceRange(minYears, maxYears) {
+  const ids = new Set();
+  if (minYears != null && !isNaN(minYears)) ids.add(yearsToExperienceId(minYears));
+  if (maxYears != null && !isNaN(maxYears)) ids.add(yearsToExperienceId(maxYears));
+  return [...ids];
+}
+
+// Offline heuristic parse — used when no Groq key is set, or as a fallback
+// when the LLM call fails.
+function parseJdLocally(text) {
+  const skillPool = [...ASIC_SKILLS, ...JD_EXTRA_TERMS];
+  const seen = new Set();
+  const skills = [];
+  skillPool.forEach(sk => {
+    const key = sk.toLowerCase();
+    if (seen.has(key)) return;
+    const eligible = sk.length >= 4 || SHORT_SKILL_ALLOWLIST.has(sk) || JD_EXTRA_TERMS.includes(sk);
+    if (eligible && jdContainsTerm(text, sk)) { skills.push(sk); seen.add(key); }
+  });
+
+  const locations = locationOptions.filter(loc => jdContainsTerm(text, loc));
+  if (jdContainsTerm(text, 'Bangalore') && !locations.includes('Bengaluru')) locations.push('Bengaluru');
+
+  const companies = companyOptions.filter(c => jdContainsTerm(text, c));
+
+  const designations = designationOptions.filter(d => jdContainsTerm(text, d));
+  const titleMatch = text.match(/job\s*title\s*:\s*(.+)/i);
+  if (titleMatch) {
+    const t = titleMatch[1].split(/[\n\r|(]/)[0].trim();
+    if (t && !designations.some(d => d.toLowerCase() === t.toLowerCase())) designations.unshift(t);
+  }
+
+  let experienceIds = [];
+  const range = text.match(/(\d{1,2})\s*(?:[-–—]|to)\s*(\d{1,2})\s*\+?\s*years?/i);
+  const plus = text.match(/(\d{1,2})\s*\+\s*years?/i);
+  const single = text.match(/(\d{1,2})\s*years?/i);
+  if (range) experienceIds = mapExperienceRange(parseInt(range[1]), parseInt(range[2]));
+  else if (plus) experienceIds = mapExperienceRange(parseInt(plus[1]), 99);
+  else if (single) experienceIds = mapExperienceRange(parseInt(single[1]), parseInt(single[1]));
+
+  const openToWork = /open to work|actively looking|immediate joiner|notice period/i.test(text);
+
+  return {
+    skills: skills.slice(0, 15),
+    designations: [...new Set(designations)].slice(0, 6),
+    locations: [...new Set(locations)],
+    companies: [...new Set(companies)],
+    experienceIds,
+    openToWork
+  };
+}
+
+// LLM parse via the existing Groq integration. Returns the same shape as
+// parseJdLocally.
+async function parseJdWithGroq(text, apiKey) {
+  const model = localStorage.getItem('siliconPatternsGroqModel') || 'llama-3.3-70b-versatile';
+  const system = `You extract structured LinkedIn sourcing filters from a job description.
+Return ONLY a valid JSON object with this exact shape:
+{
+  "skills": string[],        // 5-12 most search-worthy technical skills/tools/protocols. Prefer canonical names from the provided list; add clearly-required ones not in the list. NO soft skills.
+  "designations": string[],  // 2-5 likely LinkedIn job titles for this role
+  "locations": string[],     // city/region names, e.g. "Bengaluru" (use "Bengaluru" not "Bangalore")
+  "companies": string[],     // only specific target employers explicitly named in the JD, else []
+  "experienceIds": string[], // subset of allowed experience bucket ids covering the required years
+  "openToWork": boolean      // true ONLY if the JD explicitly wants active job seekers / immediate joiners
+}
+Allowed experienceIds: "1"=<1yr, "2"=1-2yr, "3"=3-5yr, "4"=6-10yr, "5"=10+yr.
+Canonical skills: ${ASIC_SKILLS.join(', ')}.
+Respond with JSON only, no prose or markdown.`;
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: `Job description:\n\n${text}` }
+      ],
+      temperature: 0.1,
+      max_tokens: 1200,
+      response_format: { type: 'json_object' }
+    })
+  });
+  if (!res.ok) throw new Error(`Groq API error (${res.status})`);
+  const data = await res.json();
+  const content = data?.choices?.[0]?.message?.content || '{}';
+  const parsed = JSON.parse(content);
+  const validExp = new Set(experienceOptions.map(o => o.value));
+  return {
+    skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+    designations: Array.isArray(parsed.designations) ? parsed.designations : [],
+    locations: Array.isArray(parsed.locations) ? parsed.locations : [],
+    companies: Array.isArray(parsed.companies) ? parsed.companies : [],
+    experienceIds: (Array.isArray(parsed.experienceIds) ? parsed.experienceIds : []).map(String).filter(id => validExp.has(id)),
+    openToWork: typeof parsed.openToWork === 'boolean' ? parsed.openToWork : false
+  };
+}
+
+// --- Local relevance scoring -------------------------------------------
+// A cheap, offline 0-100 relevance score computed at retrieval time so the
+// best-matching candidates float to the top before the (optional) AI Agent
+// ever runs. Skills dominate; job-title and location matches add bonuses.
+// Only the filters the recruiter actually set count toward the score, so it
+// normalises to a clean 0-100.
+export function computeMatchScore(profile, targetSkills = [], targetDesignations = [], targetLocations = []) {
+  const skillBlob = [
+    safeExtractText(profile.headline),
+    safeExtractText(profile.about || profile.summary),
+    safeExtractText(profile.currentTitle || profile.jobTitle),
+    extractSkillsList(profile),
+    Array.isArray(profile.topSkills) ? profile.topSkills.join(' ') : safeExtractText(profile.topSkills),
+    safeExtractText(profile.positions || profile.experience)
+  ].filter(t => t && t !== 'N/A').join('  ');
+
+  let earned = 0;
+  let possible = 0;
+
+  if (targetSkills.length > 0) {
+    possible += 70;
+    const hits = targetSkills.filter(s => jdContainsTerm(skillBlob, s)).length;
+    earned += (hits / targetSkills.length) * 70;
+  }
+
+  if (targetDesignations.length > 0) {
+    possible += 20;
+    const titleBlob = [
+      safeExtractText(profile.headline),
+      safeExtractText(profile.currentTitle || profile.jobTitle)
+    ].join('  ');
+    if (targetDesignations.some(d => jdContainsTerm(titleBlob, d))) earned += 20;
+  }
+
+  if (targetLocations.length > 0) {
+    possible += 10;
+    const locBlob = safeExtractText(profile.location);
+    if (targetLocations.some(l => jdContainsTerm(locBlob, l))) earned += 10;
+  }
+
+  if (possible === 0) return 0;
+  return Math.round((earned / possible) * 100);
+}
 
 function TagSelect({ options, selected, onChange, placeholder, allowCustom = true }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -373,8 +556,140 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const [customSkill, setCustomSkill] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
 
+  // Job Description autofill
+  const [jdText, setJdText] = useState('');
+  const [jdParsing, setJdParsing] = useState(false);
+  const [jdMessage, setJdMessage] = useState(null); // { type: 'info'|'error', text }
+  const [showJdPanel, setShowJdPanel] = useState(false);
+
+  // Presets (scoped to the logged-in account)
+  const accountId = (currentUser?.email || 'anon').toLowerCase();
+  const presetKey = `siliconPatternsPresets_${accountId}`;
+  const lastSearchKey = `siliconPatternsLastSearch_${accountId}`;
+  const pageStateKey = `siliconPatternsSearchPage_${accountId}`;
+  const [presets, setPresets] = useState([]);
+  const [lastSearch, setLastSearch] = useState(null);
+  const [presetName, setPresetName] = useState('');
+  const [showSavePreset, setShowSavePreset] = useState(false);
+  // Page-advance: which LinkedIn search page the next run of the CURRENT
+  // filter set will pull, so each run fetches fresh people instead of
+  // re-scraping (and re-paying for) the same first 25.
+  const [nextRunPage, setNextRunPage] = useState(1);
+
+  // A stable fingerprint of the actor query inputs. When it changes, the
+  // page counter resets to 1.
+  const getQuerySignature = () => JSON.stringify({
+    s: [...selectedSkills].sort(),
+    d: [...designation].sort(),
+    e: [...experience].sort(),
+    l: [...location].sort(),
+    c: [...companies].sort()
+  });
+
+  useEffect(() => {
+    try { setPresets(JSON.parse(localStorage.getItem(presetKey) || '[]')); } catch { setPresets([]); }
+    try {
+      const ls = localStorage.getItem(lastSearchKey);
+      setLastSearch(ls ? JSON.parse(ls) : null);
+    } catch { setLastSearch(null); }
+  }, [presetKey, lastSearchKey]);
+
+  // Recompute the "next run page" whenever the filters change.
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(pageStateKey) || '{}');
+      setNextRunPage(stored.signature === getQuerySignature() && stored.nextPage ? stored.nextPage : 1);
+    } catch { setNextRunPage(1); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSkills, designation, experience, location, companies, pageStateKey]);
+
+  const resetSearchPage = () => {
+    try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: getQuerySignature(), nextPage: 1 })); } catch { /* ignore */ }
+    setNextRunPage(1);
+  };
+
   const availableSkills = selectedCategory === 'All' ? ASIC_SKILLS : ASIC_SKILLS_CATEGORIZED[selectedCategory];
   const filteredSkills = availableSkills.filter(s => s.toLowerCase().includes(skillFilter.toLowerCase()));
+
+  const applyParsedJd = (p) => {
+    const clean = (arr) => [...new Set((arr || []).map(s => String(s).trim()).filter(Boolean))];
+    setSelectedSkills(clean(p.skills));
+    setDesignation(clean(p.designations));
+    setLocation(clean(p.locations));
+    setCompanies(clean(p.companies));
+    const validExp = new Set(experienceOptions.map(o => o.value));
+    setExperience((p.experienceIds || []).map(String).filter(id => validExp.has(id)));
+    if (typeof p.openToWork === 'boolean') setOpenToWork(p.openToWork);
+    const total = clean(p.skills).length + clean(p.designations).length;
+    return total;
+  };
+
+  const handleParseJd = async () => {
+    if (!jdText.trim()) { setJdMessage({ type: 'error', text: 'Paste a job description first.' }); return; }
+    setJdParsing(true);
+    setJdMessage(null);
+    const apiKey = (localStorage.getItem('siliconPatternsGroqApiKey') || import.meta.env.VITE_GROQ_API_TOKEN || '').trim();
+    try {
+      let parsed;
+      if (apiKey) {
+        try {
+          parsed = await parseJdWithGroq(jdText, apiKey);
+          applyParsedJd(parsed);
+          setJdMessage({ type: 'info', text: 'Parameters auto-filled from the job description. Review and adjust before searching.' });
+        } catch (llmErr) {
+          console.error('Groq JD parse failed, falling back to local parser:', llmErr);
+          parsed = parseJdLocally(jdText);
+          applyParsedJd(parsed);
+          setJdMessage({ type: 'info', text: 'AI parse unavailable — used keyword matching instead. Please review the filled parameters.' });
+        }
+      } else {
+        parsed = parseJdLocally(jdText);
+        applyParsedJd(parsed);
+        setJdMessage({ type: 'info', text: 'Filled via keyword matching (add a Groq API key in Settings for smarter parsing).' });
+      }
+    } catch (err) {
+      console.error(err);
+      setJdMessage({ type: 'error', text: `Could not parse the job description: ${err.message}` });
+    } finally {
+      setJdParsing(false);
+    }
+  };
+
+  const getCurrentParams = () => ({
+    selectedSkills, designation, experience, location, companies, openToWork, maxItems
+  });
+
+  const applyParams = (p) => {
+    if (!p) return;
+    setSelectedSkills(p.selectedSkills || []);
+    setDesignation(p.designation || []);
+    setExperience(p.experience || []);
+    setLocation(p.location || []);
+    setCompanies(p.companies || []);
+    setOpenToWork(!!p.openToWork);
+    if (p.maxItems) setMaxItems(p.maxItems);
+  };
+
+  const savePreset = () => {
+    const name = presetName.trim();
+    if (!name) return;
+    if (selectedSkills.length === 0 && designation.length === 0) {
+      alert('Add some skills or designations before saving a preset.');
+      return;
+    }
+    const entry = { name, params: getCurrentParams(), savedAt: new Date().toISOString() };
+    const next = [entry, ...presets.filter(p => p.name.toLowerCase() !== name.toLowerCase())].slice(0, 20);
+    setPresets(next);
+    localStorage.setItem(presetKey, JSON.stringify(next));
+    setPresetName('');
+    setShowSavePreset(false);
+  };
+
+  const deletePreset = (name) => {
+    const next = presets.filter(p => p.name !== name);
+    setPresets(next);
+    localStorage.setItem(presetKey, JSON.stringify(next));
+  };
 
   const handleAddCustomSkill = () => {
     if (customSkill.trim() && !selectedSkills.includes(customSkill.trim())) {
@@ -406,24 +721,49 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
         return `"${skill}"`;
       };
 
-      let finalQuery = `(${selectedSkills.map(expandSkillForQuery).join(' AND ')})`;
-      if (companies.length > 0) {
-        const compArr = companies.map(c => `"${c.trim()}"`).join(' OR ');
-        finalQuery += ` AND (${compArr})`;
-      }
-      if (openToWork) finalQuery += ' AND ("Open to work" OR "#opentowork" OR "looking for")';
+      // HIGH-RECALL retrieval: match ANY selected skill (OR), then let the
+      // scoring/ranking layer surface the best fits. ANDing every skill as an
+      // exact phrase is what collapsed results down to a handful of profiles
+      // (and kept returning the same already-saved people).
+      const skillQuery = selectedSkills.map(expandSkillForQuery).join(' OR ');
+      const finalQuery = selectedSkills.length > 1 ? `(${skillQuery})` : skillQuery;
+
+      // Page-advance: pull the next page of results for this exact filter set
+      // so each (limited & paid) run brings fresh people instead of the same
+      // first 25. Resets to page 1 whenever the filters change.
+      const querySignature = getQuerySignature();
+      let startPage = 1;
+      try {
+        const stored = JSON.parse(localStorage.getItem(pageStateKey) || '{}');
+        if (stored.signature === querySignature && stored.nextPage) startPage = stored.nextPage;
+      } catch { /* default page 1 */ }
 
       const searchInput = {
         searchQuery: finalQuery,
         ...(location.length > 0 && { locations: location }),
         ...(designation.length > 0 && { currentJobTitles: designation }),
+        // Use the actor's dedicated company field instead of poisoning the
+        // keyword query with more AND clauses.
+        ...(companies.length > 0 && { currentCompanies: companies.map(c => c.trim()) }),
         ...(experience.length > 0 && { yearsOfExperienceIds: experience }),
         profileScraperMode: "Full",
+        startPage: startPage,
         maxItems: maxItems
       };
+      // NOTE: "Open to work" is a profile badge, not reliable searchable text,
+      // so it is NOT added to searchQuery (that AND clause was killing results).
+      // It is applied purely as a post-fetch filter via isCandidateOpenToWork below.
 
       const currentApifyToken = localStorage.getItem('siliconPatternsApifyKey') || DEFAULT_APIFY_TOKEN;
       if (!currentApifyToken) { alert("Please provide an Apify API Key in Settings."); setLoading(false); return; }
+
+      // Remember this parameter set for the logged-in account so it can be
+      // one-click restored later.
+      try {
+        const lp = { ...getCurrentParams(), savedAt: new Date().toISOString() };
+        localStorage.setItem(lastSearchKey, JSON.stringify(lp));
+        setLastSearch(lp);
+      } catch { /* non-fatal */ }
 
       setStatus('Contacting Apify servers and launching actor...');
       const runResponse = await fetch(`https://api.apify.com/v2/acts/${ACTOR_NAME}/runs?token=${currentApifyToken}`, {
@@ -453,15 +793,40 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       const datasetResponse = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${currentApifyToken}`);
       if (!datasetResponse.ok) throw new Error('Failed to pull final data array.');
       let profiles = await datasetResponse.json();
+      if (!Array.isArray(profiles)) profiles = [];
+      const totalScraped = profiles.length;
 
-      if (openToWork) {
-        profiles = profiles.filter(p => isCandidateOpenToWork(p));
-      }
-
-      if (!profiles || profiles.length === 0) {
-        setStatus('No matching records found with these exact parameters.');
+      if (totalScraped === 0) {
+        // Ran out of results for this query — reset so the next run starts over.
+        try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: 1 })); } catch { /* ignore */ }
+        setNextRunPage(1);
+        setStatus(startPage > 1
+          ? `No more results — you've reached the end of this search (page ${startPage} was empty). Page counter reset to 1.`
+          : 'The scrape returned 0 profiles for these parameters. Try broadening the skills/titles or removing filters.');
         setLoading(false);
         return;
+      }
+
+      // This page had results — advance so the next run of this same search
+      // pulls the following page of fresh people.
+      const advancedPage = startPage + 1;
+      try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: advancedPage })); } catch { /* ignore */ }
+      setNextRunPage(advancedPage);
+
+      // "Open to Work" is applied as a post-filter because LinkedIn search
+      // results don't expose it as a query field. But that badge often isn't
+      // present in the search dataset at all — so hard-filtering would silently
+      // drop every candidate. Keep it resilient: only narrow when the signal
+      // actually exists, otherwise show everything and flag it.
+      let openToWorkNote = '';
+      if (openToWork) {
+        const otwMatches = profiles.filter(p => isCandidateOpenToWork(p));
+        if (otwMatches.length > 0) {
+          openToWorkNote = ` (${otwMatches.length} of ${totalScraped} flagged Open to Work)`;
+          profiles = otwMatches;
+        } else {
+          openToWorkNote = ` — note: couldn't confirm "Open to Work" status from LinkedIn search data, so all ${totalScraped} matches are shown.`;
+        }
       }
 
       const existingUrls = new Set(masterLeads.map(lead => cleanUrl(lead.linkedinUrl || lead.url)));
@@ -478,12 +843,15 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
             location: profile.location,
             about: profile.about || profile.summary,
             skills: profile.skills,
+            topSkills: profile.topSkills,
             positions: profile.positions || profile.experience,
             educations: profile.educations || profile.education,
             linkedinUrl: profile.linkedinUrl || profile.url,
             url: profile.url,
-            isOpenToWork: profile.isOpenToWork,
-            matchScore: null,
+            // harvestapi returns the badge as `openToWork`; keep the legacy
+            // key populated with the real value.
+            isOpenToWork: profile.openToWork ?? profile.isOpenToWork ?? false,
+            matchScore: computeMatchScore(profile, selectedSkills, designation, location),
             status: 'sourced',
             assignedRecruiterEmail: currentUser?.email || 'dev@siliconpatterns.com',
             _searchedDesignation: designation.join(', '),
@@ -497,7 +865,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       });
 
       if (newUniqueProfiles.length === 0) {
-        setStatus('Search complete — all candidates already in your Master Database.');
+        setStatus(`Search complete — all ${profiles.length} matching candidates are already in your Master Database.${openToWorkNote}`);
         setLoading(false);
         return;
       }
@@ -533,7 +901,13 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
         }
       }
 
-      const getEffectiveScore = (p) => (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : 0;
+      // Prefer the AI Agent score once it exists; otherwise rank by the local
+      // relevance score computed at retrieval.
+      const getEffectiveScore = (p) => {
+        if (p.agentScore !== undefined && p.agentScore !== null) return p.agentScore;
+        if (p.matchScore !== undefined && p.matchScore !== null) return p.matchScore;
+        return 0;
+      };
       newUniqueProfiles.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a));
       setLatestRunResults(newUniqueProfiles);
 
@@ -541,7 +915,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       updatedMaster.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a));
       setMasterLeads(updatedMaster);
 
-      setStatus(`Found ${profiles.length} profiles. Added ${newUniqueProfiles.length} NEW candidates to Master Database.`);
+      setStatus(`Found ${profiles.length} profiles. Added ${newUniqueProfiles.length} NEW candidates to Master Database.${openToWorkNote}`);
     } catch (error) {
       console.error(error);
       setStatus(`System Error: ${error.message}`);
@@ -571,6 +945,136 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       </div>
 
       <div style={{ backgroundColor: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)', padding: '24px' }}>
+
+        {/* --- Auto-fill from Job Description --- */}
+        <div style={{ marginBottom: '20px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface)', overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setShowJdPanel(v => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600'
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+              Auto-fill from Job Description
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', transform: showJdPanel ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
+          </button>
+
+          {showJdPanel && (
+            <div style={{ padding: '0 16px 16px' }}>
+              <textarea
+                value={jdText}
+                onChange={e => setJdText(e.target.value)}
+                placeholder="Paste the full job description here — title, location, experience, required skills — and we'll fill in the search parameters below."
+                rows={7}
+                style={{ ...inputStyle, resize: 'vertical', fontSize: '13px', lineHeight: 1.5, minHeight: '120px' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handleParseJd}
+                  disabled={jdParsing}
+                  style={{
+                    padding: '8px 16px', backgroundColor: jdParsing ? 'var(--border-color)' : 'var(--accent)',
+                    color: 'var(--accent-fg)', border: 'none', borderRadius: '6px',
+                    cursor: jdParsing ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: '600',
+                    display: 'flex', alignItems: 'center', gap: '8px'
+                  }}
+                >
+                  {jdParsing ? 'Analyzing…' : 'Auto-fill parameters'}
+                </button>
+                {jdText && (
+                  <button type="button" onClick={() => { setJdText(''); setJdMessage(null); }} style={{
+                    padding: '8px 12px', background: 'transparent', color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px'
+                  }}>Clear</button>
+                )}
+              </div>
+              {jdMessage && (
+                <p style={{
+                  margin: '10px 0 0', fontSize: '12px',
+                  color: jdMessage.type === 'error' ? '#f87171' : 'var(--text-secondary)'
+                }}>{jdMessage.text}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* --- Presets & recent search (per account) --- */}
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+            <span style={{ ...labelStyle, marginBottom: 0 }}>Saved Presets</span>
+            {!showSavePreset ? (
+              <button type="button" onClick={() => setShowSavePreset(true)} style={{
+                padding: '5px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500',
+                display: 'flex', alignItems: 'center', gap: '6px'
+              }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                Save current
+              </button>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <input
+                  type="text"
+                  autoFocus
+                  value={presetName}
+                  onChange={e => setPresetName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); savePreset(); } if (e.key === 'Escape') { setShowSavePreset(false); setPresetName(''); } }}
+                  placeholder="Preset name…"
+                  style={{ ...inputStyle, width: '160px', padding: '6px 10px', fontSize: '12px' }}
+                />
+                <button type="button" onClick={savePreset} style={{
+                  padding: '6px 12px', background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none',
+                  borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600'
+                }}>Save</button>
+                <button type="button" onClick={() => { setShowSavePreset(false); setPresetName(''); }} style={{
+                  padding: '6px 10px', background: 'transparent', color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px'
+                }}>Cancel</button>
+              </div>
+            )}
+          </div>
+
+          {(presets.length > 0 || lastSearch) ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {lastSearch && (
+                <button type="button" onClick={() => applyParams(lastSearch)} title="Restore the parameters from your last search" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500', cursor: 'pointer',
+                  border: '1px dashed var(--accent)', background: 'rgba(0, 229, 255, 0.08)', color: 'var(--accent)'
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path></svg>
+                  Restore last search
+                </button>
+              )}
+              {presets.map(preset => (
+                <span key={preset.name} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  padding: '6px 8px 6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
+                  border: '1px solid var(--border-color)', background: 'var(--bg-surface)', color: 'var(--text-primary)'
+                }}>
+                  <button type="button" onClick={() => applyParams(preset.params)} title={`Load preset "${preset.name}"`} style={{
+                    background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '12px', fontWeight: '500', padding: 0
+                  }}>{preset.name}</button>
+                  <span
+                    onClick={() => deletePreset(preset.name)}
+                    title="Delete preset"
+                    style={{ cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 'bold', lineHeight: 1 }}
+                  >×</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+              No presets yet. Configure the filters below and click “Save current” to reuse them later.
+            </p>
+          )}
+        </div>
 
         <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           <div>
@@ -739,7 +1243,21 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
             </div>
           </div>
 
-          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {nextRunPage > 1 ? (
+                <>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>Next run → page {nextRunPage}</span>
+                  <span style={{ opacity: 0.7 }}>(fetches the next 25, no repeats)</span>
+                  <button type="button" onClick={resetSearchPage} title="Start this search from page 1 again" style={{
+                    background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
+                    borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer'
+                  }}>Reset to page 1</button>
+                </>
+              ) : (
+                <span style={{ opacity: 0.8 }}>Each run auto-advances to the next page of fresh candidates.</span>
+              )}
+            </div>
             <button type="submit" disabled={loading} title="Run Targeted Search" style={{
               padding: '10px', backgroundColor: loading ? 'var(--border-color)' : 'var(--accent)',
               color: 'var(--accent-fg)', border: 'none', borderRadius: '6px',
@@ -794,13 +1312,24 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
                     <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>{safeExtractText(p.currentTitle || p.jobTitle || p.headline).substring(0, 60)}</p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    {p.agentScore !== undefined && p.agentScore !== null && (
+                    {isCandidateOpenToWork(p) && (
+                      <span style={{
+                        backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981',
+                        padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', border: '1px solid rgba(16, 185, 129, 0.3)'
+                      }}>Open to Work</span>
+                    )}
+                    {p.agentScore !== undefined && p.agentScore !== null ? (
                       <span style={{
                         backgroundColor: 'rgba(0, 229, 255, 0.15)',
                         color: 'var(--accent)',
                         padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500', border: '1px solid rgba(0, 229, 255, 0.3)'
                       }}>Score: {p.agentScore}</span>
-                    )}
+                    ) : (p.matchScore !== undefined && p.matchScore !== null && (
+                      <span title="Local relevance score (skills, title & location match)" style={{
+                        backgroundColor: 'var(--bg-surface)', color: 'var(--text-secondary)',
+                        padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500', border: '1px solid var(--border-color)'
+                      }}>Match: {p.matchScore}%</span>
+                    ))}
                     <a href={safeExtractText(p.linkedinUrl || p.url)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}>↗</a>
                   </div>
                 </div>

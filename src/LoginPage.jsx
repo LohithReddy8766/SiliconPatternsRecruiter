@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from './AuthContext';
+import { useAuth, isAdminEmail } from './AuthContext';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -45,6 +45,7 @@ export default function LoginPage() {
         try {
           const params = new URLSearchParams(hash.replace('#', '?'));
           const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
           if (accessToken) {
             const cleanBaseUrl = activeUrl.replace(/\/$/, '');
             fetch(`${cleanBaseUrl}/auth/v1/user`, {
@@ -62,7 +63,10 @@ export default function LoginPage() {
                 login({
                   email: cleanEmail,
                   name: displayName,
-                  picture: userData.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`
+                  picture: userData.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`,
+                  accessToken,
+                  refreshToken,
+                  userData
                 });
                 navigate('/');
               }
@@ -150,6 +154,7 @@ export default function LoginPage() {
         method: 'POST',
         headers: {
           'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -159,7 +164,8 @@ export default function LoginPage() {
       });
 
       const { checkEmailApproved, addPendingUser } = await import('./supabase.js');
-      const isApproved = await checkEmailApproved(supabaseUrl, supabaseKey, cleanEmail);
+      // Built-in admins are pre-authorized and skip the approval gate.
+      const isApproved = isAdminEmail(cleanEmail) || await checkEmailApproved(supabaseUrl, supabaseKey, cleanEmail);
 
       if (!isApproved) {
         // Add to pending_users table since they aren't on the allowlist
@@ -205,7 +211,10 @@ export default function LoginPage() {
       login({
         email: cleanEmail,
         name: displayName,
-        picture: avatarUrl
+        picture: avatarUrl,
+        accessToken: authData?.access_token,
+        refreshToken: authData?.refresh_token,
+        userData: authData?.user
       });
 
       setLoading(false);
@@ -218,27 +227,6 @@ export default function LoginPage() {
   };
 
   // Removed handleVerifyOtp as it's no longer needed
-
-  const handleDevelopmentBypass = () => {
-    try {
-      const cleanEmail = email.toLowerCase().trim();
-      if (cleanEmail !== 'adminsiliconpatterns@siliconpatterns.com') {
-        setError('Bypass only available for administrator accounts.');
-        return;
-      }
-      const username = cleanEmail.split('@')[0];
-      const displayName = username.charAt(0).toUpperCase() + username.slice(1);
-      
-      login({
-        email: cleanEmail,
-        name: `${displayName} Admin`,
-        picture: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}+Admin&background=random`
-      });
-      navigate('/');
-    } catch (err) {
-      setError(err.message);
-    }
-  };
 
   const handleGoBack = () => {
     setStep('email');
@@ -359,28 +347,6 @@ export default function LoginPage() {
             </form>
           ) : (
              <div></div>
-          )}
-
-          {/* Development Bypass Section */}
-          {(email.toLowerCase().trim() === 'adminsiliconpatterns@siliconpatterns.com') && (
-            <>
-              <div style={{ width: '100%', height: '1px', backgroundColor: 'var(--border-color)', margin: '8px 0' }}></div>
-              
-              <button
-                onClick={handleDevelopmentBypass}
-                style={{
-                  width: '100%', padding: '12px', backgroundColor: 'var(--bg-main)', 
-                  color: 'var(--text-primary)', border: '1px solid var(--border-color)', 
-                  borderRadius: '8px', fontSize: '14px', fontWeight: '600', 
-                  cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
-                }}
-                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
-                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--bg-main)'}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
-                Developer Bypass Login
-              </button>
-            </>
           )}
 
           {/* Collapsible Connection Config Section */}
