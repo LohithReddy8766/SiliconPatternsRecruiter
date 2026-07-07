@@ -129,6 +129,55 @@ export async function deleteCandidateFromSupabase(url, key, candidate) {
 }
 
 /**
+ * Atomically reserve the next LinkedIn search page for a query signature.
+ * Backed by the `reserve_search_page` Postgres function so concurrent runs
+ * across the whole team never grab the same page. Returns the 1-based page
+ * this caller should scrape.
+ */
+export async function reserveSearchPage(url, key, signature) {
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/rpc/reserve_search_page`, {
+    method: 'POST',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ p_signature: signature })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Failed to reserve search page: ${errText || res.statusText}`);
+  }
+
+  const page = await res.json();
+  const n = parseInt(page, 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+/**
+ * Reset the shared cursor for a query signature back to page 1.
+ */
+export async function resetSearchPage(url, key, signature) {
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/rpc/reset_search_page`, {
+    method: 'POST',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ p_signature: signature })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Failed to reset search page: ${errText || res.statusText}`);
+  }
+}
+
+/**
  * Log recruiter activity to 'recruiter_activities' in Supabase
  */
 export async function logRecruiterActivity(url, key, activity) {

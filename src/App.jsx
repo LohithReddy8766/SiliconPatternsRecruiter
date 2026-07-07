@@ -547,6 +547,9 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const [designation, setDesignation] = useState([]);
   const [experience, setExperience] = useState([]);
   const [openToWork, setOpenToWork] = useState(false);
+  // How selected skills combine in the query: 'any' = OR (broad recall),
+  // 'all' = AND (strict — profile must mention every skill).
+  const [skillMatchMode, setSkillMatchMode] = useState('any');
   const [maxItems, setMaxItems] = useState(100);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
@@ -575,6 +578,10 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   // filter set will pull, so each run fetches fresh people instead of
   // re-scraping (and re-paying for) the same first 25.
   const [nextRunPage, setNextRunPage] = useState(1);
+  const [lastScrapedPage, setLastScrapedPage] = useState(null);
+  // When Supabase is connected the page cursor is shared across the whole
+  // team (atomic reserve via RPC); otherwise it falls back to per-browser.
+  const globalCursor = !!(supabaseUrl && supabaseKey);
 
   // A stable fingerprint of the actor query inputs. When it changes, the
   // page counter resets to 1.
@@ -583,7 +590,8 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     d: [...designation].sort(),
     e: [...experience].sort(),
     l: [...location].sort(),
-    c: [...companies].sort()
+    c: [...companies].sort(),
+    m: skillMatchMode
   });
 
   useEffect(() => {
@@ -601,11 +609,24 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       setNextRunPage(stored.signature === getQuerySignature() && stored.nextPage ? stored.nextPage : 1);
     } catch { setNextRunPage(1); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSkills, designation, experience, location, companies, pageStateKey]);
+  }, [selectedSkills, designation, experience, location, companies, skillMatchMode, pageStateKey]);
 
-  const resetSearchPage = () => {
-    try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: getQuerySignature(), nextPage: 1 })); } catch { /* ignore */ }
+  const resetSearchPage = async () => {
+    const querySignature = getQuerySignature();
+    if (globalCursor) {
+      try {
+        const { resetSearchPage: resetCursorRPC } = await import('./supabase.js');
+        await resetCursorRPC(supabaseUrl, supabaseKey, querySignature);
+        setStatus('Shared team cursor reset to page 1 for this search.');
+      } catch (e) {
+        console.error('Failed to reset shared cursor:', e);
+        setStatus('Could not reset the shared page cursor.');
+      }
+    } else {
+      try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: 1 })); } catch { /* ignore */ }
+    }
     setNextRunPage(1);
+    setLastScrapedPage(null);
   };
 
   const availableSkills = selectedCategory === 'All' ? ASIC_SKILLS : ASIC_SKILLS_CATEGORIZED[selectedCategory];
@@ -656,7 +677,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   };
 
   const getCurrentParams = () => ({
-    selectedSkills, designation, experience, location, companies, openToWork, maxItems
+    selectedSkills, designation, experience, location, companies, openToWork, maxItems, skillMatchMode
   });
 
   const applyParams = (p) => {
@@ -668,6 +689,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     setCompanies(p.companies || []);
     setOpenToWork(!!p.openToWork);
     if (p.maxItems) setMaxItems(p.maxItems);
+    if (p.skillMatchMode) setSkillMatchMode(p.skillMatchMode);
   };
 
   const savePreset = () => {
@@ -725,18 +747,36 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       // scoring/ranking layer surface the best fits. ANDing every skill as an
       // exact phrase is what collapsed results down to a handful of profiles
       // (and kept returning the same already-saved people).
-      const skillQuery = selectedSkills.map(expandSkillForQuery).join(' OR ');
+      // 'any' → OR (broad recall), 'all' → AND (strict, must mention every skill).
+      const joiner = skillMatchMode === 'all' ? ' AND ' : ' OR ';
+      const skillQuery = selectedSkills.map(expandSkillForQuery).join(joiner);
       const finalQuery = selectedSkills.length > 1 ? `(${skillQuery})` : skillQuery;
 
       // Page-advance: pull the next page of results for this exact filter set
       // so each (limited & paid) run brings fresh people instead of the same
-      // first 25. Resets to page 1 whenever the filters change.
+      // first 25. When Supabase is connected, the page is reserved atomically
+      // from a shared cursor so the whole team never re-scrapes the same page.
       const querySignature = getQuerySignature();
+      const useGlobalCursor = globalCursor;
       let startPage = 1;
-      try {
-        const stored = JSON.parse(localStorage.getItem(pageStateKey) || '{}');
-        if (stored.signature === querySignature && stored.nextPage) startPage = stored.nextPage;
-      } catch { /* default page 1 */ }
+      const readLocalPage = () => {
+        try {
+          const stored = JSON.parse(localStorage.getItem(pageStateKey) || '{}');
+          if (stored.signature === querySignature && stored.nextPage) return stored.nextPage;
+        } catch { /* default page 1 */ }
+        return 1;
+      };
+      if (useGlobalCursor) {
+        try {
+          const { reserveSearchPage } = await import('./supabase.js');
+          startPage = await reserveSearchPage(supabaseUrl, supabaseKey, querySignature);
+        } catch (curErr) {
+          console.error('Shared page cursor unavailable, falling back to local counter:', curErr);
+          startPage = readLocalPage();
+        }
+      } else {
+        startPage = readLocalPage();
+      }
 
       const searchInput = {
         searchQuery: finalQuery,
@@ -797,21 +837,30 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       const totalScraped = profiles.length;
 
       if (totalScraped === 0) {
-        // Ran out of results for this query — reset so the next run starts over.
-        try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: 1 })); } catch { /* ignore */ }
+        // Ran out of results for this query — reset the cursor so the next run
+        // (by anyone) starts over from page 1.
+        if (useGlobalCursor) {
+          try { const { resetSearchPage } = await import('./supabase.js'); await resetSearchPage(supabaseUrl, supabaseKey, querySignature); } catch (e) { console.error(e); }
+        } else {
+          try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: 1 })); } catch { /* ignore */ }
+        }
         setNextRunPage(1);
+        setLastScrapedPage(null);
         setStatus(startPage > 1
-          ? `No more results — you've reached the end of this search (page ${startPage} was empty). Page counter reset to 1.`
+          ? `No more results — reached the end of this search (page ${startPage} was empty). Cursor reset to page 1.`
           : 'The scrape returned 0 profiles for these parameters. Try broadening the skills/titles or removing filters.');
         setLoading(false);
         return;
       }
 
-      // This page had results — advance so the next run of this same search
-      // pulls the following page of fresh people.
-      const advancedPage = startPage + 1;
-      try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: advancedPage })); } catch { /* ignore */ }
-      setNextRunPage(advancedPage);
+      // This page had results. In global mode the shared cursor was already
+      // advanced atomically at reserve time; in local mode advance our own.
+      setLastScrapedPage(startPage);
+      if (!useGlobalCursor) {
+        const advancedPage = startPage + 1;
+        try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: advancedPage })); } catch { /* ignore */ }
+        setNextRunPage(advancedPage);
+      }
 
       // "Open to Work" is applied as a post-filter because LinkedIn search
       // results don't expose it as a query field. But that badge often isn't
@@ -1078,7 +1127,33 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
 
         <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           <div>
-            <label style={labelStyle}>Core Competency Matrix</label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>Core Competency Matrix</label>
+              {/* Skill match mode: how selected skills combine in the query */}
+              <div style={{ display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+                {[
+                  { key: 'any', label: 'Match any', hint: 'Broad — profile mentions at least one skill (OR). More results.' },
+                  { key: 'all', label: 'Match all', hint: 'Strict — profile must mention every skill (AND). Fewer, closer matches.' }
+                ].map(opt => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    title={opt.hint}
+                    onClick={() => setSkillMatchMode(opt.key)}
+                    style={{
+                      padding: '5px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: 'none',
+                      backgroundColor: skillMatchMode === opt.key ? 'var(--accent)' : 'transparent',
+                      color: skillMatchMode === opt.key ? 'var(--accent-fg)' : 'var(--text-secondary)'
+                    }}
+                  >{opt.label}</button>
+                ))}
+              </div>
+            </div>
+            <p style={{ margin: '0 0 12px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+              {skillMatchMode === 'all'
+                ? 'Strict: candidates must mention every selected skill. Use for tight shortlists.'
+                : 'Broad: candidates matching any selected skill are returned, ranked by relevance.'}
+            </p>
 
             {/* Selected skills as removable tags */}
             {selectedSkills.length > 0 && (
@@ -1244,18 +1319,32 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
           </div>
 
           <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {nextRunPage > 1 ? (
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {globalCursor ? (
+                <>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--text-primary)', fontWeight: '500' }}>
+                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                    Team-shared paging
+                  </span>
+                  <span style={{ opacity: 0.75 }}>
+                    {lastScrapedPage ? `last run scraped page ${lastScrapedPage} · ` : ''}each run grabs the next unused page across your whole team.
+                  </span>
+                  <button type="button" onClick={resetSearchPage} title="Reset the shared cursor for this exact search back to page 1 (affects everyone)" style={{
+                    background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
+                    borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer'
+                  }}>Reset to page 1</button>
+                </>
+              ) : nextRunPage > 1 ? (
                 <>
                   <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>Next run → page {nextRunPage}</span>
-                  <span style={{ opacity: 0.7 }}>(fetches the next 25, no repeats)</span>
+                  <span style={{ opacity: 0.7 }}>(fetches the next 25, no repeats · this device only)</span>
                   <button type="button" onClick={resetSearchPage} title="Start this search from page 1 again" style={{
                     background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
                     borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer'
                   }}>Reset to page 1</button>
                 </>
               ) : (
-                <span style={{ opacity: 0.8 }}>Each run auto-advances to the next page of fresh candidates.</span>
+                <span style={{ opacity: 0.8 }}>Each run auto-advances to the next page of fresh candidates (connect Supabase to share paging across the team).</span>
               )}
             </div>
             <button type="submit" disabled={loading} title="Run Targeted Search" style={{
