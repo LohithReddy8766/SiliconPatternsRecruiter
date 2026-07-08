@@ -157,6 +157,53 @@ export async function reserveSearchPage(url, key, signature) {
 }
 
 /**
+ * Read the current shared page for a query signature WITHOUT advancing it.
+ * Returns 1 when no cursor exists yet.
+ */
+export async function peekSearchPage(url, key, signature) {
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/rpc/peek_search_page`, {
+    method: 'POST',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ p_signature: signature })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Failed to read search page: ${errText || res.statusText}`);
+  }
+
+  const page = await res.json();
+  const n = parseInt(page, 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+/**
+ * Explicitly set the shared page for a query signature (manual page jump).
+ */
+export async function setSearchPage(url, key, signature, page) {
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  const res = await fetch(`${cleanBaseUrl}/rest/v1/rpc/set_search_page`, {
+    method: 'POST',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ p_signature: signature, p_page: Math.max(1, parseInt(page, 10) || 1) })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Failed to set search page: ${errText || res.statusText}`);
+  }
+}
+
+/**
  * Reset the shared cursor for a query signature back to page 1.
  */
 export async function resetSearchPage(url, key, signature) {

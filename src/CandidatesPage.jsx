@@ -708,6 +708,8 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   const [currentPage, setCurrentPage] = useState(1);
   // Collapsible skill filter
   const [showSkillFilter, setShowSkillFilter] = useState(false);
+  // CSV export: how many candidates to include ('' = all)
+  const [exportCount, setExportCount] = useState('');
 
   const toggleFilterSkill = (skill) => {
     setFilterSkills(prev => prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]);
@@ -730,8 +732,13 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
 
   const downloadCSV = () => {
     if (filteredCandidates.length === 0) return;
-    const headers = ['First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience Level', 'LinkedIn URL'];
-    
+    // Respect the requested export count (blank / <=0 = all).
+    const n = parseInt(exportCount, 10);
+    const exportList = (Number.isFinite(n) && n > 0)
+      ? filteredCandidates.slice(0, n)
+      : filteredCandidates;
+    const headers = ['First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience Level', 'Open To Work', 'LinkedIn URL'];
+
     const escapeCsv = (str) => {
       if (str === null || str === undefined) return '""';
       const s = String(str);
@@ -753,18 +760,19 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       return title; // fallback to title
     };
 
-    const rows = filteredCandidates.map(p => {
+    const rows = exportList.map(p => {
       const loc = safeExtractText(p.location);
       const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
       const skills = extractSkillsList(p);
       const about = safeExtractText(p.about || p.summary);
       const url = safeExtractText(p.linkedinUrl || p.url);
+      const openToWork = isCandidateOpenToWork(p) ? 'Yes' : 'No';
 
       let exp = 'N/A';
       if (p.positions && Array.isArray(p.positions)) exp = p.positions.map(e => getLevel(e.title)).filter(Boolean).join(' | ');
       else if (p.experience && Array.isArray(p.experience)) exp = p.experience.map(e => getLevel(e.title)).filter(Boolean).join(' | ');
 
-      return [safeExtractText(p.firstName), safeExtractText(p.lastName), title, loc, skills, about, exp, url]
+      return [safeExtractText(p.firstName), safeExtractText(p.lastName), title, loc, skills, about, exp, openToWork, url]
         .map(escapeCsv)
         .join(',');
     });
@@ -897,9 +905,19 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
             {hasActiveFilters && <span style={{ color: 'var(--accent)', fontWeight: '600' }}> · Filters active</span>}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={downloadCSV} title="Export CSV" style={{ padding: '8px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input
+            type="number"
+            min="1"
+            value={exportCount}
+            onChange={e => setExportCount(e.target.value)}
+            placeholder={`All (${filteredCandidates.length})`}
+            title="How many candidates to include in the CSV (leave blank for all). Exports the top N in the current sort order."
+            style={{ width: '110px', padding: '7px 10px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none', fontFamily: 'inherit' }}
+          />
+          <button onClick={downloadCSV} title="Export CSV" style={{ padding: '8px 12px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '32px', fontSize: '13px', fontWeight: '600' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            CSV
           </button>
           <button onClick={clearAll} title="Clear All Candidates" style={{ padding: '8px', backgroundColor: 'var(--bg-surface)', color: '#ef4444', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>

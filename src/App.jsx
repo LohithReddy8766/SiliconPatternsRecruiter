@@ -146,9 +146,8 @@ function mapExperienceRange(minYears, maxYears) {
   return [...ids];
 }
 
-// Offline heuristic parse — used when no Groq key is set, or as a fallback
-// when the LLM call fails.
-function parseJdLocally(text) {
+// Extract known/likely skills mentioned in a chunk of text.
+function extractSkillsFromText(text) {
   const skillPool = [...ASIC_SKILLS, ...JD_EXTRA_TERMS];
   const seen = new Set();
   const skills = [];
@@ -158,6 +157,35 @@ function parseJdLocally(text) {
     const eligible = sk.length >= 4 || SHORT_SKILL_ALLOWLIST.has(sk) || JD_EXTRA_TERMS.includes(sk);
     if (eligible && jdContainsTerm(text, sk)) { skills.push(sk); seen.add(key); }
   });
+  return skills;
+}
+
+// Offline heuristic parse — used when no Groq key is set, or as a fallback
+// when the LLM call fails.
+function parseJdLocally(text) {
+  // Split off a "good to have / nice to have / preferred / bonus" section so
+  // those skills become optional rather than required.
+  const gthRe = /(good to have|nice[- ]to[- ]have|preferred|preferable|desirable|bonus|added advantage|would be a plus|pluses|plus points|good to know)/i;
+  let requiredText = text;
+  let optionalText = '';
+  const gth = text.match(gthRe);
+  if (gth) {
+    const startIdx = gth.index;
+    let endIdx = text.length;
+    const after = text.slice(startIdx + gth[0].length);
+    // Stop the optional section at the next major heading.
+    const nextHeading = after.match(/\n\s*(soft skills|education|qualifications?|responsibilit|about the|what you|benefits|perks|why join)/i);
+    if (nextHeading) endIdx = startIdx + gth[0].length + nextHeading.index;
+    optionalText = text.slice(startIdx, endIdx);
+    requiredText = text.slice(0, startIdx) + ' ' + text.slice(endIdx);
+  }
+
+  const requiredSkills = extractSkillsFromText(requiredText);
+  const requiredSet = new Set(requiredSkills.map(s => s.toLowerCase()));
+  // Only skills that appear ONLY in the good-to-have section become optional.
+  const optionalSkills = gth
+    ? extractSkillsFromText(optionalText).filter(s => !requiredSet.has(s.toLowerCase()))
+    : [];
 
   const locations = locationOptions.filter(loc => jdContainsTerm(text, loc));
   if (jdContainsTerm(text, 'Bangalore') && !locations.includes('Bengaluru')) locations.push('Bengaluru');
@@ -182,7 +210,8 @@ function parseJdLocally(text) {
   const openToWork = /open to work|actively looking|immediate joiner|notice period/i.test(text);
 
   return {
-    skills: skills.slice(0, 15),
+    skills: requiredSkills.slice(0, 15),
+    optionalSkills: optionalSkills.slice(0, 12),
     designations: [...new Set(designations)].slice(0, 6),
     locations: [...new Set(locations)],
     companies: [...new Set(companies)],
@@ -198,12 +227,13 @@ async function parseJdWithGroq(text, apiKey) {
   const system = `You extract structured LinkedIn sourcing filters from a job description.
 Return ONLY a valid JSON object with this exact shape:
 {
-  "skills": string[],        // 5-12 most search-worthy technical skills/tools/protocols. Prefer canonical names from the provided list; add clearly-required ones not in the list. NO soft skills.
-  "designations": string[],  // 2-5 likely LinkedIn job titles for this role
-  "locations": string[],     // city/region names, e.g. "Bengaluru" (use "Bengaluru" not "Bangalore")
-  "companies": string[],     // only specific target employers explicitly named in the JD, else []
-  "experienceIds": string[], // subset of allowed experience bucket ids covering the required years
-  "openToWork": boolean      // true ONLY if the JD explicitly wants active job seekers / immediate joiners
+  "skills": string[],         // 5-12 REQUIRED / must-have technical skills (from "Required Skills", core responsibilities). Prefer canonical names from the list; add clearly-required ones not in it. NO soft skills.
+  "optionalSkills": string[], // ONLY skills the JD lists as nice-to-have: sections like "Good to Have", "Nice to have", "Preferred", "Bonus", "Plus", "Desirable". If the JD has NO such section, return []. Never duplicate anything already in "skills".
+  "designations": string[],   // 2-5 likely LinkedIn job titles for this role
+  "locations": string[],      // city/region names, e.g. "Bengaluru" (use "Bengaluru" not "Bangalore")
+  "companies": string[],      // only specific target employers explicitly named in the JD, else []
+  "experienceIds": string[],  // subset of allowed experience bucket ids covering the required years
+  "openToWork": boolean       // true ONLY if the JD explicitly wants active job seekers / immediate joiners
 }
 Allowed experienceIds: "1"=<1yr, "2"=1-2yr, "3"=3-5yr, "4"=6-10yr, "5"=10+yr.
 Canonical skills: ${ASIC_SKILLS.join(', ')}.
@@ -228,8 +258,12 @@ Respond with JSON only, no prose or markdown.`;
   const content = data?.choices?.[0]?.message?.content || '{}';
   const parsed = JSON.parse(content);
   const validExp = new Set(experienceOptions.map(o => o.value));
+  const req = Array.isArray(parsed.skills) ? parsed.skills : [];
+  const reqSet = new Set(req.map(s => String(s).toLowerCase()));
   return {
-    skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+    skills: req,
+    // Drop any optional skill that duplicates a required one.
+    optionalSkills: (Array.isArray(parsed.optionalSkills) ? parsed.optionalSkills : []).filter(s => !reqSet.has(String(s).toLowerCase())),
     designations: Array.isArray(parsed.designations) ? parsed.designations : [],
     locations: Array.isArray(parsed.locations) ? parsed.locations : [],
     companies: Array.isArray(parsed.companies) ? parsed.companies : [],
@@ -241,10 +275,10 @@ Respond with JSON only, no prose or markdown.`;
 // --- Local relevance scoring -------------------------------------------
 // A cheap, offline 0-100 relevance score computed at retrieval time so the
 // best-matching candidates float to the top before the (optional) AI Agent
-// ever runs. Skills dominate; job-title and location matches add bonuses.
-// Only the filters the recruiter actually set count toward the score, so it
-// normalises to a clean 0-100.
-export function computeMatchScore(profile, targetSkills = [], targetDesignations = [], targetLocations = []) {
+// ever runs. Must-have skills dominate; nice-to-have skills, job title and
+// location add bonuses. Only the filters the recruiter actually set count
+// toward the score, so it normalises to a clean 0-100.
+export function computeMatchScore(profile, requiredSkills = [], optionalSkills = [], targetDesignations = [], targetLocations = []) {
   const skillBlob = [
     safeExtractText(profile.headline),
     safeExtractText(profile.about || profile.summary),
@@ -257,19 +291,25 @@ export function computeMatchScore(profile, targetSkills = [], targetDesignations
   let earned = 0;
   let possible = 0;
 
-  if (targetSkills.length > 0) {
-    possible += 70;
-    const hits = targetSkills.filter(s => jdContainsTerm(skillBlob, s)).length;
-    earned += (hits / targetSkills.length) * 70;
+  if (requiredSkills.length > 0) {
+    possible += 55;
+    const hits = requiredSkills.filter(s => jdContainsTerm(skillBlob, s)).length;
+    earned += (hits / requiredSkills.length) * 55;
+  }
+
+  if (optionalSkills.length > 0) {
+    possible += 20;
+    const optHits = optionalSkills.filter(s => jdContainsTerm(skillBlob, s)).length;
+    earned += (optHits / optionalSkills.length) * 20;
   }
 
   if (targetDesignations.length > 0) {
-    possible += 20;
+    possible += 15;
     const titleBlob = [
       safeExtractText(profile.headline),
       safeExtractText(profile.currentTitle || profile.jobTitle)
     ].join('  ');
-    if (targetDesignations.some(d => jdContainsTerm(titleBlob, d))) earned += 20;
+    if (targetDesignations.some(d => jdContainsTerm(titleBlob, d))) earned += 15;
   }
 
   if (targetLocations.length > 0) {
@@ -372,6 +412,24 @@ function TagSelect({ options, selected, onChange, placeholder, allowCustom = tru
           borderRadius: '6px', marginTop: '4px', maxHeight: '200px', overflowY: 'auto',
           boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
         }}>
+          {/* Add-custom pinned to the TOP so it's always visible, even when the
+              list of existing options is long. */}
+          {allowCustom && inputValue.trim() && !options.some(o => (typeof o === 'object' ? o.label : o).toLowerCase() === inputValue.trim().toLowerCase()) && (
+            <div
+              onClick={() => {
+                if (!selected.includes(inputValue.trim())) onChange([...selected, inputValue.trim()]);
+                setInputValue('');
+              }}
+              style={{
+                padding: '8px 12px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent-fg)',
+                backgroundColor: 'var(--accent)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px',
+                position: 'sticky', top: 0, zIndex: 1
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add “{inputValue.trim()}”
+            </div>
+          )}
           {filteredOptions.map(opt => {
             const val = typeof opt === 'object' ? opt.value : opt;
             const label = typeof opt === 'object' ? opt.label : opt;
@@ -390,21 +448,6 @@ function TagSelect({ options, selected, onChange, placeholder, allowCustom = tru
               </div>
             );
           })}
-          {allowCustom && inputValue.trim() && !options.some(o => (typeof o === 'object' ? o.label : o).toLowerCase() === inputValue.trim().toLowerCase()) && (
-            <div
-              onClick={() => {
-                if (!selected.includes(inputValue.trim())) onChange([...selected, inputValue.trim()]);
-                setInputValue('');
-              }}
-              style={{
-                padding: '8px 12px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent)', fontStyle: 'italic'
-              }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-main)'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-            >
-              Add custom "{inputValue.trim()}"
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -541,12 +584,12 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
 function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const [selectedSkills, setSelectedSkills] = useState([]);
+  const [selectedSkills, setSelectedSkills] = useState([]); // must-have (filters the query)
+  const [optionalSkills, setOptionalSkills] = useState([]); // nice-to-have (boosts ranking only)
   const [companies, setCompanies] = useState([]);
   const [location, setLocation] = useState([]);
   const [designation, setDesignation] = useState([]);
   const [experience, setExperience] = useState([]);
-  const [openToWork, setOpenToWork] = useState(false);
   // How selected skills combine in the query: 'any' = OR (broad recall),
   // 'all' = AND (strict — profile must mention every skill).
   const [skillMatchMode, setSkillMatchMode] = useState('any');
@@ -554,6 +597,10 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [apifyRunUrl, setApifyRunUrl] = useState(null);
+  const [runInfo, setRunInfo] = useState(null); // { totalPages, totalItems, scraped } live progress
+  const [aborting, setAborting] = useState(false);
+  const runIdRef = useRef(null);
+  const stopRequestedRef = useRef(false);
   const [latestRunResults, setLatestRunResults] = useState([]);
   const [skillFilter, setSkillFilter] = useState('');
   const [customSkill, setCustomSkill] = useState('');
@@ -564,6 +611,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const [jdParsing, setJdParsing] = useState(false);
   const [jdMessage, setJdMessage] = useState(null); // { type: 'info'|'error', text }
   const [showJdPanel, setShowJdPanel] = useState(false);
+  const jdFileRef = useRef(null);
 
   // Presets (scoped to the logged-in account)
   const accountId = (currentUser?.email || 'anon').toLowerCase();
@@ -576,11 +624,13 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const [showSavePreset, setShowSavePreset] = useState(false);
   // Page-advance: which LinkedIn search page the next run of the CURRENT
   // filter set will pull, so each run fetches fresh people instead of
-  // re-scraping (and re-paying for) the same first 25.
-  const [nextRunPage, setNextRunPage] = useState(1);
+  // re-scraping (and re-paying for) the same first 25. `pageInput` is the
+  // visible, editable page the next run will scrape.
+  const [pageInput, setPageInput] = useState(1);
   const [lastScrapedPage, setLastScrapedPage] = useState(null);
+  const [pageSyncing, setPageSyncing] = useState(false);
   // When Supabase is connected the page cursor is shared across the whole
-  // team (atomic reserve via RPC); otherwise it falls back to per-browser.
+  // team; otherwise it falls back to per-browser localStorage.
   const globalCursor = !!(supabaseUrl && supabaseKey);
 
   // A stable fingerprint of the actor query inputs. When it changes, the
@@ -602,51 +652,82 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     } catch { setLastSearch(null); }
   }, [presetKey, lastSearchKey]);
 
-  // Recompute the "next run page" whenever the filters change.
-  useEffect(() => {
+  // Read the stored page for a signature from localStorage (local-mode / fallback).
+  const readLocalPageForSig = (sig) => {
     try {
       const stored = JSON.parse(localStorage.getItem(pageStateKey) || '{}');
-      setNextRunPage(stored.signature === getQuerySignature() && stored.nextPage ? stored.nextPage : 1);
-    } catch { setNextRunPage(1); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSkills, designation, experience, location, companies, skillMatchMode, pageStateKey]);
+      if (stored.signature === sig && stored.nextPage) return stored.nextPage;
+    } catch { /* default */ }
+    return 1;
+  };
 
-  const resetSearchPage = async () => {
-    const querySignature = getQuerySignature();
+  // Persist the page for a signature — to the shared Supabase cursor when
+  // connected, otherwise to localStorage.
+  const persistPage = async (page, sig) => {
+    const p = Math.max(1, parseInt(page, 10) || 1);
     if (globalCursor) {
       try {
-        const { resetSearchPage: resetCursorRPC } = await import('./supabase.js');
-        await resetCursorRPC(supabaseUrl, supabaseKey, querySignature);
-        setStatus('Shared team cursor reset to page 1 for this search.');
+        const { setSearchPage } = await import('./supabase.js');
+        await setSearchPage(supabaseUrl, supabaseKey, sig, p);
+        return;
       } catch (e) {
-        console.error('Failed to reset shared cursor:', e);
-        setStatus('Could not reset the shared page cursor.');
+        console.error('Failed to sync shared page, using local fallback:', e);
       }
-    } else {
-      try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: 1 })); } catch { /* ignore */ }
     }
-    setNextRunPage(1);
-    setLastScrapedPage(null);
+    try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: sig, nextPage: p })); } catch { /* ignore */ }
   };
+
+  // Load the current page whenever the filters (signature) change. In global
+  // mode this peeks the shared cursor so everyone sees the same number.
+  useEffect(() => {
+    let cancelled = false;
+    const sig = getQuerySignature();
+    setLastScrapedPage(null);
+    if (globalCursor) {
+      setPageSyncing(true);
+      import('./supabase.js')
+        .then(({ peekSearchPage }) => peekSearchPage(supabaseUrl, supabaseKey, sig))
+        .then(p => { if (!cancelled) setPageInput(p); })
+        .catch(() => { if (!cancelled) setPageInput(readLocalPageForSig(sig)); })
+        .finally(() => { if (!cancelled) setPageSyncing(false); });
+    } else {
+      setPageInput(readLocalPageForSig(sig));
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSkills, designation, experience, location, companies, skillMatchMode, globalCursor, supabaseUrl, supabaseKey]);
+
+  // User manually typed a page number — clamp and persist it.
+  const commitPageInput = (value) => {
+    const p = Math.max(1, parseInt(value, 10) || 1);
+    setPageInput(p);
+    persistPage(p, getQuerySignature());
+  };
+
+  const resetSearchPage = () => commitPageInput(1);
 
   const availableSkills = selectedCategory === 'All' ? ASIC_SKILLS : ASIC_SKILLS_CATEGORIZED[selectedCategory];
   const filteredSkills = availableSkills.filter(s => s.toLowerCase().includes(skillFilter.toLowerCase()));
 
   const applyParsedJd = (p) => {
     const clean = (arr) => [...new Set((arr || []).map(s => String(s).trim()).filter(Boolean))];
-    setSelectedSkills(clean(p.skills));
+    const required = clean(p.skills);
+    setSelectedSkills(required);
+    // Only fill nice-to-have skills when the JD actually spells out a
+    // good-to-have section — otherwise leave the field as the user had it.
+    const optional = clean(p.optionalSkills).filter(s => !required.some(r => r.toLowerCase() === s.toLowerCase()));
+    if (optional.length > 0) setOptionalSkills(optional);
     setDesignation(clean(p.designations));
     setLocation(clean(p.locations));
     setCompanies(clean(p.companies));
     const validExp = new Set(experienceOptions.map(o => o.value));
     setExperience((p.experienceIds || []).map(String).filter(id => validExp.has(id)));
-    if (typeof p.openToWork === 'boolean') setOpenToWork(p.openToWork);
-    const total = clean(p.skills).length + clean(p.designations).length;
-    return total;
+    return required.length + clean(p.designations).length;
   };
 
-  const handleParseJd = async () => {
-    if (!jdText.trim()) { setJdMessage({ type: 'error', text: 'Paste a job description first.' }); return; }
+  const handleParseJd = async (overrideText) => {
+    const text = (typeof overrideText === 'string' ? overrideText : jdText);
+    if (!text.trim()) { setJdMessage({ type: 'error', text: 'Paste or upload a job description first.' }); return; }
     setJdParsing(true);
     setJdMessage(null);
     const apiKey = (localStorage.getItem('siliconPatternsGroqApiKey') || import.meta.env.VITE_GROQ_API_TOKEN || '').trim();
@@ -654,17 +735,17 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       let parsed;
       if (apiKey) {
         try {
-          parsed = await parseJdWithGroq(jdText, apiKey);
+          parsed = await parseJdWithGroq(text, apiKey);
           applyParsedJd(parsed);
           setJdMessage({ type: 'info', text: 'Parameters auto-filled from the job description. Review and adjust before searching.' });
         } catch (llmErr) {
           console.error('Groq JD parse failed, falling back to local parser:', llmErr);
-          parsed = parseJdLocally(jdText);
+          parsed = parseJdLocally(text);
           applyParsedJd(parsed);
           setJdMessage({ type: 'info', text: 'AI parse unavailable — used keyword matching instead. Please review the filled parameters.' });
         }
       } else {
-        parsed = parseJdLocally(jdText);
+        parsed = parseJdLocally(text);
         applyParsedJd(parsed);
         setJdMessage({ type: 'info', text: 'Filled via keyword matching (add a Groq API key in Settings for smarter parsing).' });
       }
@@ -676,18 +757,40 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     }
   };
 
+  const handleJdFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = ''; // allow re-picking the same file
+    if (!file) return;
+    setShowJdPanel(true);
+    setJdParsing(true);
+    setJdMessage({ type: 'info', text: `Reading ${file.name}…` });
+    try {
+      const { extractJobDescriptionText } = await import('./jdExtract.js');
+      const text = (await extractJobDescriptionText(file) || '').trim();
+      if (!text) throw new Error('No readable text found in that file.');
+      setJdText(text);
+      setJdParsing(false);
+      // Auto-parse straight away using the freshly extracted text.
+      await handleParseJd(text);
+    } catch (err) {
+      console.error(err);
+      setJdParsing(false);
+      setJdMessage({ type: 'error', text: err.message || 'Could not read that file.' });
+    }
+  };
+
   const getCurrentParams = () => ({
-    selectedSkills, designation, experience, location, companies, openToWork, maxItems, skillMatchMode
+    selectedSkills, optionalSkills, designation, experience, location, companies, maxItems, skillMatchMode
   });
 
   const applyParams = (p) => {
     if (!p) return;
     setSelectedSkills(p.selectedSkills || []);
+    setOptionalSkills(p.optionalSkills || []);
     setDesignation(p.designation || []);
     setExperience(p.experience || []);
     setLocation(p.location || []);
     setCompanies(p.companies || []);
-    setOpenToWork(!!p.openToWork);
     if (p.maxItems) setMaxItems(p.maxItems);
     if (p.skillMatchMode) setSkillMatchMode(p.skillMatchMode);
   };
@@ -724,12 +827,30 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     setSelectedSkills(prev => prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]);
   };
 
+  // Gracefully stop the current run — keeps whatever was scraped so far.
+  const handleStopSearch = async () => {
+    if (!runIdRef.current || stopRequestedRef.current) return;
+    stopRequestedRef.current = true;
+    setAborting(true);
+    setStatus('Stopping run — keeping everything scraped so far…');
+    try {
+      const token = localStorage.getItem('siliconPatternsApifyKey') || DEFAULT_APIFY_TOKEN;
+      await fetch(`https://api.apify.com/v2/actor-runs/${runIdRef.current}/abort?gracefully=1&token=${token}`, { method: 'POST' });
+    } catch (err) {
+      console.error('Failed to abort run:', err);
+    }
+  };
+
   const handleSearch = async (e) => {
     e.preventDefault();
     if (selectedSkills.length === 0) { alert("Please select at least one core skill."); return; }
     setLoading(true);
     setLatestRunResults([]);
     setApifyRunUrl(null);
+    setRunInfo(null);
+    setAborting(false);
+    stopRequestedRef.current = false;
+    runIdRef.current = null;
     setStatus('Initiating search protocol...');
 
     try {
@@ -752,31 +873,12 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       const skillQuery = selectedSkills.map(expandSkillForQuery).join(joiner);
       const finalQuery = selectedSkills.length > 1 ? `(${skillQuery})` : skillQuery;
 
-      // Page-advance: pull the next page of results for this exact filter set
-      // so each (limited & paid) run brings fresh people instead of the same
-      // first 25. When Supabase is connected, the page is reserved atomically
-      // from a shared cursor so the whole team never re-scrapes the same page.
+      // Page-advance: pull the page shown in the (editable) page selector so
+      // each run brings fresh people instead of re-scraping the same first 25.
+      // The selector is backed by the shared cursor in global mode.
       const querySignature = getQuerySignature();
       const useGlobalCursor = globalCursor;
-      let startPage = 1;
-      const readLocalPage = () => {
-        try {
-          const stored = JSON.parse(localStorage.getItem(pageStateKey) || '{}');
-          if (stored.signature === querySignature && stored.nextPage) return stored.nextPage;
-        } catch { /* default page 1 */ }
-        return 1;
-      };
-      if (useGlobalCursor) {
-        try {
-          const { reserveSearchPage } = await import('./supabase.js');
-          startPage = await reserveSearchPage(supabaseUrl, supabaseKey, querySignature);
-        } catch (curErr) {
-          console.error('Shared page cursor unavailable, falling back to local counter:', curErr);
-          startPage = readLocalPage();
-        }
-      } else {
-        startPage = readLocalPage();
-      }
+      const startPage = Math.max(1, parseInt(pageInput, 10) || 1);
 
       const searchInput = {
         searchQuery: finalQuery,
@@ -815,21 +917,44 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       const runJson = await runResponse.json();
       const runId = runJson.data.id;
       const datasetId = runJson.data.defaultDatasetId;
+      runIdRef.current = runId;
 
       setApifyRunUrl(`https://console.apify.com/actors/runs/${runId}`);
       setStatus('Actor launched! Scraping deep profile data... (Please wait)');
 
+      // Pull the run log and extract the actor's "Total pages / Total items"
+      // line plus how many profiles have been scraped so far, for live progress.
+      const refreshRunInfo = async () => {
+        try {
+          const logRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/log?token=${currentApifyToken}`);
+          if (!logRes.ok) return;
+          const logText = await logRes.text();
+          const m = logText.match(/Total pages:\s*(\d+)\.\s*Total items:\s*(\d+)/i);
+          const scraped = (logText.match(/Scraped profile/g) || []).length;
+          setRunInfo({
+            totalPages: m ? parseInt(m[1], 10) : null,
+            totalItems: m ? parseInt(m[2], 10) : null,
+            scraped
+          });
+        } catch { /* progress is best-effort */ }
+      };
+
       let runStatus = 'RUNNING';
-      while (runStatus === 'RUNNING' || runStatus === 'READY') {
+      let wasAborted = false;
+      while (['RUNNING', 'READY', 'ABORTING'].includes(runStatus)) {
         await new Promise(resolve => setTimeout(resolve, 4000));
+        await refreshRunInfo();
         const statusResponse = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${currentApifyToken}`);
         const statusJson = await statusResponse.json();
         runStatus = statusJson.data.status;
         if (runStatus === 'SUCCEEDED') break;
-        if (['FAILED', 'TIMED-OUT', 'ABORTED'].includes(runStatus)) throw new Error(`Execution terminated: ${runStatus}`);
+        if (runStatus === 'ABORTED') { wasAborted = true; break; }
+        if (['FAILED', 'TIMED-OUT'].includes(runStatus)) throw new Error(`Execution terminated: ${runStatus}`);
       }
 
-      setStatus('Extracting dataset and running deduplication algorithm...');
+      setStatus(wasAborted
+        ? 'Run stopped — collecting the profiles scraped before the stop…'
+        : 'Extracting dataset and running deduplication algorithm...');
       const datasetResponse = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${currentApifyToken}`);
       if (!datasetResponse.ok) throw new Error('Failed to pull final data array.');
       let profiles = await datasetResponse.json();
@@ -837,46 +962,32 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       const totalScraped = profiles.length;
 
       if (totalScraped === 0) {
-        // Ran out of results for this query — reset the cursor so the next run
+        // Ran out of results for this query — reset the page so the next run
         // (by anyone) starts over from page 1.
-        if (useGlobalCursor) {
-          try { const { resetSearchPage } = await import('./supabase.js'); await resetSearchPage(supabaseUrl, supabaseKey, querySignature); } catch (e) { console.error(e); }
-        } else {
-          try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: 1 })); } catch { /* ignore */ }
-        }
-        setNextRunPage(1);
+        setPageInput(1);
+        await persistPage(1, querySignature);
         setLastScrapedPage(null);
         setStatus(startPage > 1
-          ? `No more results — reached the end of this search (page ${startPage} was empty). Cursor reset to page 1.`
+          ? `No more results — reached the end of this search (page ${startPage} was empty). Page reset to 1.`
           : 'The scrape returned 0 profiles for these parameters. Try broadening the skills/titles or removing filters.');
         setLoading(false);
         return;
       }
 
-      // This page had results. In global mode the shared cursor was already
-      // advanced atomically at reserve time; in local mode advance our own.
+      // This page had results — advance the (shared) page past however many
+      // pages we actually pulled (maxItems can span multiple 25-profile pages),
+      // so the next run continues with fresh people instead of overlapping.
       setLastScrapedPage(startPage);
-      if (!useGlobalCursor) {
-        const advancedPage = startPage + 1;
-        try { localStorage.setItem(pageStateKey, JSON.stringify({ signature: querySignature, nextPage: advancedPage })); } catch { /* ignore */ }
-        setNextRunPage(advancedPage);
-      }
+      const pagesConsumed = Math.max(1, Math.ceil(totalScraped / 25));
+      const advancedPage = startPage + pagesConsumed;
+      setPageInput(advancedPage);
+      await persistPage(advancedPage, querySignature);
 
-      // "Open to Work" is applied as a post-filter because LinkedIn search
-      // results don't expose it as a query field. But that badge often isn't
-      // present in the search dataset at all — so hard-filtering would silently
-      // drop every candidate. Keep it resilient: only narrow when the signal
-      // actually exists, otherwise show everything and flag it.
-      let openToWorkNote = '';
-      if (openToWork) {
-        const otwMatches = profiles.filter(p => isCandidateOpenToWork(p));
-        if (otwMatches.length > 0) {
-          openToWorkNote = ` (${otwMatches.length} of ${totalScraped} flagged Open to Work)`;
-          profiles = otwMatches;
-        } else {
-          openToWorkNote = ` — note: couldn't confirm "Open to Work" status from LinkedIn search data, so all ${totalScraped} matches are shown.`;
-        }
-      }
+      // Every scraped profile is kept (you paid to scrape them) and tagged
+      // with its open-to-work status. Filter to open-to-work in the Candidates
+      // page whenever you want — no need to discard people at scrape time.
+      const otwCount = profiles.filter(p => isCandidateOpenToWork(p)).length;
+      const openToWorkNote = otwCount > 0 ? ` (${otwCount} flagged Open to Work)` : '';
 
       const existingUrls = new Set(masterLeads.map(lead => cleanUrl(lead.linkedinUrl || lead.url)));
       const newUniqueProfiles = [];
@@ -900,7 +1011,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
             // harvestapi returns the badge as `openToWork`; keep the legacy
             // key populated with the real value.
             isOpenToWork: profile.openToWork ?? profile.isOpenToWork ?? false,
-            matchScore: computeMatchScore(profile, selectedSkills, designation, location),
+            matchScore: computeMatchScore(profile, selectedSkills, optionalSkills, designation, location),
             status: 'sourced',
             assignedRecruiterEmail: currentUser?.email || 'dev@siliconpatterns.com',
             _searchedDesignation: designation.join(', '),
@@ -964,12 +1075,17 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       updatedMaster.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a));
       setMasterLeads(updatedMaster);
 
-      setStatus(`Found ${profiles.length} profiles. Added ${newUniqueProfiles.length} NEW candidates to Master Database.${openToWorkNote}`);
+      const stoppedNote = wasAborted ? ' (run stopped early — partial results kept)' : '';
+      setStatus(`Found ${profiles.length} profiles${stoppedNote}. Added ${newUniqueProfiles.length} NEW candidates to Master Database.${openToWorkNote}`);
     } catch (error) {
       console.error(error);
       setStatus(`System Error: ${error.message}`);
     } finally {
       setLoading(false);
+      setAborting(false);
+      setRunInfo(null);
+      runIdRef.current = null;
+      stopRequestedRef.current = false;
     }
   };
 
@@ -1022,10 +1138,17 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
                 rows={7}
                 style={{ ...inputStyle, resize: 'vertical', fontSize: '13px', lineHeight: 1.5, minHeight: '120px' }}
               />
+              <input
+                ref={jdFileRef}
+                type="file"
+                accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                onChange={handleJdFile}
+                style={{ display: 'none' }}
+              />
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={handleParseJd}
+                  onClick={() => handleParseJd()}
                   disabled={jdParsing}
                   style={{
                     padding: '8px 16px', backgroundColor: jdParsing ? 'var(--border-color)' : 'var(--accent)',
@@ -1035,6 +1158,21 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
                   }}
                 >
                   {jdParsing ? 'Analyzing…' : 'Auto-fill parameters'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => jdFileRef.current?.click()}
+                  disabled={jdParsing}
+                  title="Upload a job description as PDF, DOCX or TXT"
+                  style={{
+                    padding: '8px 14px', background: 'transparent', color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)', borderRadius: '6px',
+                    cursor: jdParsing ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: '500',
+                    display: 'flex', alignItems: 'center', gap: '8px'
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  Upload PDF / DOCX
                 </button>
                 {jdText && (
                   <button type="button" onClick={() => { setJdText(''); setJdMessage(null); }} style={{
@@ -1128,7 +1266,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
         <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
-              <label style={{ ...labelStyle, marginBottom: 0 }}>Core Competency Matrix</label>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>Must-have Skills</label>
               {/* Skill match mode: how selected skills combine in the query */}
               <div style={{ display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
                 {[
@@ -1237,6 +1375,19 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
             })()}
           </div>
 
+          <div>
+            <label style={labelStyle}>Nice-to-have Skills <span style={{ textTransform: 'none', fontWeight: '400', color: 'var(--text-secondary)' }}>(optional — boosts ranking, never excludes)</span></label>
+            <TagSelect
+              options={ASIC_SKILLS}
+              selected={optionalSkills}
+              onChange={setOptionalSkills}
+              placeholder="e.g. PCIe, SignalTap, Python — bonus points, not required"
+            />
+            <p style={{ margin: '8px 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
+              Candidates who also have these rank higher (higher Match %), but people missing them are still returned.
+            </p>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div>
               <label style={labelStyle}>Designation(s) <span style={{ textTransform: 'none', fontWeight: '400', color: 'var(--text-secondary)' }}>(comma-separated)</span></label>
@@ -1280,71 +1431,59 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
-            <div
-              onClick={() => setOpenToWork(!openToWork)}
-              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', cursor: 'pointer', width: 'fit-content' }}
-            >
-              <div style={{
-                width: '36px', height: '20px', backgroundColor: openToWork ? 'var(--accent)' : 'var(--bg-surface)',
-                borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s',
-                border: `1px solid ${openToWork ? 'var(--accent)' : 'var(--border-color)'}`
-              }}>
-                <div style={{
-                  width: '14px', height: '14px', backgroundColor: openToWork ? 'var(--accent-fg)' : 'var(--text-secondary)',
-                  borderRadius: '50%', position: 'absolute', top: '2px', left: openToWork ? '18px' : '2px',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                }} />
-              </div>
-              <span style={{ fontSize: '13px', fontWeight: '500', color: openToWork ? 'var(--text-primary)' : 'var(--text-secondary)', userSelect: 'none', transition: 'color 0.2s' }}>
-                Open to Work
-              </span>
-            </div>
-
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Every scraped candidate is saved with their Open-to-Work status — filter to them anytime in the Candidate Database.
+            </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <label style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)' }}>Max Items to Scrape:</label>
-              <input 
-                type="number" 
-                value={maxItems} 
+              <input
+                type="number"
+                value={maxItems}
                 onChange={(e) => setMaxItems(parseInt(e.target.value) || 100)}
                 min="1"
                 max="2000"
-                style={{ 
-                  width: '80px', padding: '8px 12px', borderRadius: '6px', 
-                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', 
+                style={{
+                  width: '80px', padding: '8px 12px', borderRadius: '6px',
+                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)',
                   color: 'var(--text-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '13px'
-                }} 
+                }}
               />
             </div>
           </div>
 
           <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              {globalCursor ? (
-                <>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--text-primary)', fontWeight: '500' }}>
-                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-                    Team-shared paging
-                  </span>
-                  <span style={{ opacity: 0.75 }}>
-                    {lastScrapedPage ? `last run scraped page ${lastScrapedPage} · ` : ''}each run grabs the next unused page across your whole team.
-                  </span>
-                  <button type="button" onClick={resetSearchPage} title="Reset the shared cursor for this exact search back to page 1 (affects everyone)" style={{
-                    background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
-                    borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer'
-                  }}>Reset to page 1</button>
-                </>
-              ) : nextRunPage > 1 ? (
-                <>
-                  <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>Next run → page {nextRunPage}</span>
-                  <span style={{ opacity: 0.7 }}>(fetches the next 25, no repeats · this device only)</span>
-                  <button type="button" onClick={resetSearchPage} title="Start this search from page 1 again" style={{
-                    background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
-                    borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer'
-                  }}>Reset to page 1</button>
-                </>
-              ) : (
-                <span style={{ opacity: 0.8 }}>Each run auto-advances to the next page of fresh candidates (connect Supabase to share paging across the team).</span>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', fontWeight: '600' }}>
+                Search page
+                <input
+                  type="number"
+                  min="1"
+                  value={pageInput}
+                  onChange={e => setPageInput(e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  onBlur={e => commitPageInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitPageInput(e.currentTarget.value); } }}
+                  title="The LinkedIn results page the next run will scrape (each page ≈ 25 people). Edit to jump to a specific page."
+                  style={{
+                    width: '58px', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '13px', textAlign: 'center'
+                  }}
+                />
+              </span>
+              <span style={{ opacity: 0.75, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                {globalCursor ? (
+                  <>
+                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: pageSyncing ? '#eab308' : '#10b981', display: 'inline-block' }} />
+                    {pageSyncing ? 'syncing…' : 'shared with your team'}
+                  </>
+                ) : 'this device only'}
+                {lastScrapedPage ? ` · last scraped page ${lastScrapedPage}` : ''}
+              </span>
+              {pageInput > 1 && (
+                <button type="button" onClick={resetSearchPage} title="Jump back to page 1" style={{
+                  background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)',
+                  borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer'
+                }}>Reset to 1</button>
               )}
             </div>
             <button type="submit" disabled={loading} title="Run Targeted Search" style={{
@@ -1371,8 +1510,33 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
           <div style={{ marginTop: '20px', padding: '14px 16px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '13px', color: 'var(--text-primary)', fontWeight: '500' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span style={{ display: 'inline-block', width: '8px', height: '8px', flexShrink: 0, backgroundColor: loading ? '#eab308' : '#10b981', borderRadius: '50%', boxShadow: loading ? '0 0 8px #eab308' : '0 0 8px #10b981' }} />
-              <span>{status}</span>
+              <span style={{ flex: 1 }}>{status}</span>
+              {loading && runIdRef.current && (
+                <button
+                  type="button"
+                  onClick={handleStopSearch}
+                  disabled={aborting}
+                  title="Stop the run now and keep whatever was scraped so far"
+                  style={{
+                    padding: '5px 12px', fontSize: '12px', fontWeight: '600', cursor: aborting ? 'not-allowed' : 'pointer',
+                    borderRadius: '6px', border: '1px solid rgba(248, 113, 113, 0.4)',
+                    backgroundColor: 'rgba(220, 38, 38, 0.12)', color: '#f87171', flexShrink: 0
+                  }}
+                >{aborting ? 'Stopping…' : 'Stop & keep'}</button>
+              )}
             </div>
+            {loading && runInfo && (runInfo.totalItems != null || runInfo.scraped > 0) && (
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {runInfo.totalItems != null && (
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Search has <strong style={{ color: 'var(--text-primary)' }}>{runInfo.totalItems}</strong> people across <strong style={{ color: 'var(--text-primary)' }}>{runInfo.totalPages}</strong> pages
+                  </span>
+                )}
+                <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: '600' }}>
+                  · scraped {runInfo.scraped}{maxItems ? ` / ${maxItems}` : ''}
+                </span>
+              </div>
+            )}
             {apifyRunUrl && (
               <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ display: 'inline-block', width: '8px', height: '8px', flexShrink: 0, backgroundColor: '#ef4444', borderRadius: '50%', boxShadow: '0 0 8px #ef4444' }} />
