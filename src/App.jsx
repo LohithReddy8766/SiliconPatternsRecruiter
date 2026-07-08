@@ -590,7 +590,6 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const [location, setLocation] = useState([]);
   const [designation, setDesignation] = useState([]);
   const [experience, setExperience] = useState([]);
-  const [openToWork, setOpenToWork] = useState(false);
   // How selected skills combine in the query: 'any' = OR (broad recall),
   // 'all' = AND (strict — profile must mention every skill).
   const [skillMatchMode, setSkillMatchMode] = useState('any');
@@ -598,6 +597,10 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [apifyRunUrl, setApifyRunUrl] = useState(null);
+  const [runInfo, setRunInfo] = useState(null); // { totalPages, totalItems, scraped } live progress
+  const [aborting, setAborting] = useState(false);
+  const runIdRef = useRef(null);
+  const stopRequestedRef = useRef(false);
   const [latestRunResults, setLatestRunResults] = useState([]);
   const [skillFilter, setSkillFilter] = useState('');
   const [customSkill, setCustomSkill] = useState('');
@@ -719,7 +722,6 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     setCompanies(clean(p.companies));
     const validExp = new Set(experienceOptions.map(o => o.value));
     setExperience((p.experienceIds || []).map(String).filter(id => validExp.has(id)));
-    if (typeof p.openToWork === 'boolean') setOpenToWork(p.openToWork);
     return required.length + clean(p.designations).length;
   };
 
@@ -778,7 +780,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   };
 
   const getCurrentParams = () => ({
-    selectedSkills, optionalSkills, designation, experience, location, companies, openToWork, maxItems, skillMatchMode
+    selectedSkills, optionalSkills, designation, experience, location, companies, maxItems, skillMatchMode
   });
 
   const applyParams = (p) => {
@@ -789,7 +791,6 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     setExperience(p.experience || []);
     setLocation(p.location || []);
     setCompanies(p.companies || []);
-    setOpenToWork(!!p.openToWork);
     if (p.maxItems) setMaxItems(p.maxItems);
     if (p.skillMatchMode) setSkillMatchMode(p.skillMatchMode);
   };
@@ -826,12 +827,30 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     setSelectedSkills(prev => prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]);
   };
 
+  // Gracefully stop the current run — keeps whatever was scraped so far.
+  const handleStopSearch = async () => {
+    if (!runIdRef.current || stopRequestedRef.current) return;
+    stopRequestedRef.current = true;
+    setAborting(true);
+    setStatus('Stopping run — keeping everything scraped so far…');
+    try {
+      const token = localStorage.getItem('siliconPatternsApifyKey') || DEFAULT_APIFY_TOKEN;
+      await fetch(`https://api.apify.com/v2/actor-runs/${runIdRef.current}/abort?gracefully=1&token=${token}`, { method: 'POST' });
+    } catch (err) {
+      console.error('Failed to abort run:', err);
+    }
+  };
+
   const handleSearch = async (e) => {
     e.preventDefault();
     if (selectedSkills.length === 0) { alert("Please select at least one core skill."); return; }
     setLoading(true);
     setLatestRunResults([]);
     setApifyRunUrl(null);
+    setRunInfo(null);
+    setAborting(false);
+    stopRequestedRef.current = false;
+    runIdRef.current = null;
     setStatus('Initiating search protocol...');
 
     try {
@@ -898,21 +917,44 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       const runJson = await runResponse.json();
       const runId = runJson.data.id;
       const datasetId = runJson.data.defaultDatasetId;
+      runIdRef.current = runId;
 
       setApifyRunUrl(`https://console.apify.com/actors/runs/${runId}`);
       setStatus('Actor launched! Scraping deep profile data... (Please wait)');
 
+      // Pull the run log and extract the actor's "Total pages / Total items"
+      // line plus how many profiles have been scraped so far, for live progress.
+      const refreshRunInfo = async () => {
+        try {
+          const logRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/log?token=${currentApifyToken}`);
+          if (!logRes.ok) return;
+          const logText = await logRes.text();
+          const m = logText.match(/Total pages:\s*(\d+)\.\s*Total items:\s*(\d+)/i);
+          const scraped = (logText.match(/Scraped profile/g) || []).length;
+          setRunInfo({
+            totalPages: m ? parseInt(m[1], 10) : null,
+            totalItems: m ? parseInt(m[2], 10) : null,
+            scraped
+          });
+        } catch { /* progress is best-effort */ }
+      };
+
       let runStatus = 'RUNNING';
-      while (runStatus === 'RUNNING' || runStatus === 'READY') {
+      let wasAborted = false;
+      while (['RUNNING', 'READY', 'ABORTING'].includes(runStatus)) {
         await new Promise(resolve => setTimeout(resolve, 4000));
+        await refreshRunInfo();
         const statusResponse = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${currentApifyToken}`);
         const statusJson = await statusResponse.json();
         runStatus = statusJson.data.status;
         if (runStatus === 'SUCCEEDED') break;
-        if (['FAILED', 'TIMED-OUT', 'ABORTED'].includes(runStatus)) throw new Error(`Execution terminated: ${runStatus}`);
+        if (runStatus === 'ABORTED') { wasAborted = true; break; }
+        if (['FAILED', 'TIMED-OUT'].includes(runStatus)) throw new Error(`Execution terminated: ${runStatus}`);
       }
 
-      setStatus('Extracting dataset and running deduplication algorithm...');
+      setStatus(wasAborted
+        ? 'Run stopped — collecting the profiles scraped before the stop…'
+        : 'Extracting dataset and running deduplication algorithm...');
       const datasetResponse = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${currentApifyToken}`);
       if (!datasetResponse.ok) throw new Error('Failed to pull final data array.');
       let profiles = await datasetResponse.json();
@@ -932,28 +974,20 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
         return;
       }
 
-      // This page had results — advance the (shared) page so the next run
-      // pulls the following page of fresh people.
+      // This page had results — advance the (shared) page past however many
+      // pages we actually pulled (maxItems can span multiple 25-profile pages),
+      // so the next run continues with fresh people instead of overlapping.
       setLastScrapedPage(startPage);
-      const advancedPage = startPage + 1;
+      const pagesConsumed = Math.max(1, Math.ceil(totalScraped / 25));
+      const advancedPage = startPage + pagesConsumed;
       setPageInput(advancedPage);
       await persistPage(advancedPage, querySignature);
 
-      // "Open to Work" is applied as a post-filter because LinkedIn search
-      // results don't expose it as a query field. But that badge often isn't
-      // present in the search dataset at all — so hard-filtering would silently
-      // drop every candidate. Keep it resilient: only narrow when the signal
-      // actually exists, otherwise show everything and flag it.
-      let openToWorkNote = '';
-      if (openToWork) {
-        const otwMatches = profiles.filter(p => isCandidateOpenToWork(p));
-        if (otwMatches.length > 0) {
-          openToWorkNote = ` (${otwMatches.length} of ${totalScraped} flagged Open to Work)`;
-          profiles = otwMatches;
-        } else {
-          openToWorkNote = ` — note: couldn't confirm "Open to Work" status from LinkedIn search data, so all ${totalScraped} matches are shown.`;
-        }
-      }
+      // Every scraped profile is kept (you paid to scrape them) and tagged
+      // with its open-to-work status. Filter to open-to-work in the Candidates
+      // page whenever you want — no need to discard people at scrape time.
+      const otwCount = profiles.filter(p => isCandidateOpenToWork(p)).length;
+      const openToWorkNote = otwCount > 0 ? ` (${otwCount} flagged Open to Work)` : '';
 
       const existingUrls = new Set(masterLeads.map(lead => cleanUrl(lead.linkedinUrl || lead.url)));
       const newUniqueProfiles = [];
@@ -1041,12 +1075,17 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       updatedMaster.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a));
       setMasterLeads(updatedMaster);
 
-      setStatus(`Found ${profiles.length} profiles. Added ${newUniqueProfiles.length} NEW candidates to Master Database.${openToWorkNote}`);
+      const stoppedNote = wasAborted ? ' (run stopped early — partial results kept)' : '';
+      setStatus(`Found ${profiles.length} profiles${stoppedNote}. Added ${newUniqueProfiles.length} NEW candidates to Master Database.${openToWorkNote}`);
     } catch (error) {
       console.error(error);
       setStatus(`System Error: ${error.message}`);
     } finally {
       setLoading(false);
+      setAborting(false);
+      setRunInfo(null);
+      runIdRef.current = null;
+      stopRequestedRef.current = false;
     }
   };
 
@@ -1392,40 +1431,23 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
-            <div
-              onClick={() => setOpenToWork(!openToWork)}
-              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', cursor: 'pointer', width: 'fit-content' }}
-            >
-              <div style={{
-                width: '36px', height: '20px', backgroundColor: openToWork ? 'var(--accent)' : 'var(--bg-surface)',
-                borderRadius: '20px', position: 'relative', transition: 'background-color 0.2s',
-                border: `1px solid ${openToWork ? 'var(--accent)' : 'var(--border-color)'}`
-              }}>
-                <div style={{
-                  width: '14px', height: '14px', backgroundColor: openToWork ? 'var(--accent-fg)' : 'var(--text-secondary)',
-                  borderRadius: '50%', position: 'absolute', top: '2px', left: openToWork ? '18px' : '2px',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                }} />
-              </div>
-              <span style={{ fontSize: '13px', fontWeight: '500', color: openToWork ? 'var(--text-primary)' : 'var(--text-secondary)', userSelect: 'none', transition: 'color 0.2s' }}>
-                Open to Work
-              </span>
-            </div>
-
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Every scraped candidate is saved with their Open-to-Work status — filter to them anytime in the Candidate Database.
+            </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <label style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)' }}>Max Items to Scrape:</label>
-              <input 
-                type="number" 
-                value={maxItems} 
+              <input
+                type="number"
+                value={maxItems}
                 onChange={(e) => setMaxItems(parseInt(e.target.value) || 100)}
                 min="1"
                 max="2000"
-                style={{ 
-                  width: '80px', padding: '8px 12px', borderRadius: '6px', 
-                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', 
+                style={{
+                  width: '80px', padding: '8px 12px', borderRadius: '6px',
+                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)',
                   color: 'var(--text-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '13px'
-                }} 
+                }}
               />
             </div>
           </div>
@@ -1488,8 +1510,33 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
           <div style={{ marginTop: '20px', padding: '14px 16px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '13px', color: 'var(--text-primary)', fontWeight: '500' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span style={{ display: 'inline-block', width: '8px', height: '8px', flexShrink: 0, backgroundColor: loading ? '#eab308' : '#10b981', borderRadius: '50%', boxShadow: loading ? '0 0 8px #eab308' : '0 0 8px #10b981' }} />
-              <span>{status}</span>
+              <span style={{ flex: 1 }}>{status}</span>
+              {loading && runIdRef.current && (
+                <button
+                  type="button"
+                  onClick={handleStopSearch}
+                  disabled={aborting}
+                  title="Stop the run now and keep whatever was scraped so far"
+                  style={{
+                    padding: '5px 12px', fontSize: '12px', fontWeight: '600', cursor: aborting ? 'not-allowed' : 'pointer',
+                    borderRadius: '6px', border: '1px solid rgba(248, 113, 113, 0.4)',
+                    backgroundColor: 'rgba(220, 38, 38, 0.12)', color: '#f87171', flexShrink: 0
+                  }}
+                >{aborting ? 'Stopping…' : 'Stop & keep'}</button>
+              )}
             </div>
+            {loading && runInfo && (runInfo.totalItems != null || runInfo.scraped > 0) && (
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {runInfo.totalItems != null && (
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Search has <strong style={{ color: 'var(--text-primary)' }}>{runInfo.totalItems}</strong> people across <strong style={{ color: 'var(--text-primary)' }}>{runInfo.totalPages}</strong> pages
+                  </span>
+                )}
+                <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: '600' }}>
+                  · scraped {runInfo.scraped}{maxItems ? ` / ${maxItems}` : ''}
+                </span>
+              </div>
+            )}
             {apifyRunUrl && (
               <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ display: 'inline-block', width: '8px', height: '8px', flexShrink: 0, backgroundColor: '#ef4444', borderRadius: '50%', boxShadow: '0 0 8px #ef4444' }} />
