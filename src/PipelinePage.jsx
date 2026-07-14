@@ -66,7 +66,7 @@ export default function PipelinePage({ masterLeads, setMasterLeads, supabaseUrl,
           fromStage: oldStage,
           toStage: newStageId,
           skills: skillArray
-        }).catch(e => console.error(e));
+        }, currentUser?.accessToken).catch(e => console.error(e));
       });
     }
   };

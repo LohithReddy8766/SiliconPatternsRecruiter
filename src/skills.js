@@ -1,5 +1,6 @@
 export const ASIC_SKILLS_CATEGORIZED = {
   "Frontend / DV": ["UVM", "SystemVerilog", "Verilog", "VHDL", "Formal", "C", "C++"],
+  "FPGA / Prototyping": ["FPGA", "FPGA Prototyping", "ASIC RTL Migration", "Vivado", "Quartus Prime", "Xilinx", "Altera", "Alveo", "Stratix", "SignalTap", "ChipScope", "Bitstream", "Board Bring-up"],
   "DFT": ["DFT", "ATPG", "Scan", "BIST", "MBIST", "JTAG", "IEEE 1500", "IEEE 1687"],
   "Emulation / Low Power": ["ZeBu", "Palladium", "Veloce", "UPF", "CPF"],
   "Backend / PD": ["Floorplanning", "CTS", "Routing", "ECO", "STA", "DRC/LVS", "IR/EM", "Power Signoff", "OPC", "Thermal Analysis", "Aging/BTI", "Noise Analysis", "2.5D Integration", "Multi-Vt Optimization"],

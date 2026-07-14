@@ -8,26 +8,55 @@ function cleanUrl(url) {
   return url.split('?')[0].toLowerCase().trim();
 }
 
-/**
- * Fetch all candidate records from Supabase table 'candidates'
- */
-export async function fetchCandidatesFromSupabase(url, key) {
-  const cleanBaseUrl = url.replace(/\/$/, '');
-  const res = await fetch(`${cleanBaseUrl}/rest/v1/candidates?select=*`, {
-    method: 'GET',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`
-    }
-  });
+// Once RLS requires the `authenticated` role, requests must carry the
+// logged-in user's own access token — the shared anon key by itself only
+// authenticates as `anon` and gets zero rows back. `apikey` still identifies
+// the project; `Authorization` carries whichever token actually proves who
+// is asking. Callers without a token (falls back to the anon key) will be
+// rejected by RLS on any policy scoped to `authenticated`.
+function authHeaders(anonKey, accessToken) {
+  return {
+    apikey: anonKey,
+    Authorization: `Bearer ${accessToken || anonKey}`
+  };
+}
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Failed to fetch candidates: ${errText || res.statusText}`);
+/**
+ * Fetch all candidate records from Supabase table 'candidates'.
+ *
+ * PostgREST (what Supabase's REST API runs on) caps a single request at
+ * 1000 rows by default — a bare `select=*` silently returns only the first
+ * 1000 even when the table holds more, with no error to indicate rows were
+ * left out. This paginates in chunks (ordered by the primary key so paging
+ * stays stable across requests) until a genuinely empty page comes back, so
+ * it keeps working correctly regardless of table size or the project's
+ * configured row cap.
+ */
+export async function fetchCandidatesFromSupabase(url, key, accessToken) {
+  const cleanBaseUrl = url.replace(/\/$/, '');
+  const pageSize = 1000;
+  let data = [];
+  let offset = 0;
+  const MAX_PAGES = 200; // safety cap: 200k rows, well beyond realistic use
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await fetch(
+      `${cleanBaseUrl}/rest/v1/candidates?select=*&order=linkedin_url.asc&limit=${pageSize}&offset=${offset}`,
+      { method: 'GET', headers: authHeaders(key, accessToken) }
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Failed to fetch candidates: ${errText || res.statusText}`);
+    }
+
+    const batch = await res.json();
+    if (batch.length === 0) break;
+    data = data.concat(batch);
+    offset += batch.length;
+    if (batch.length < pageSize) break; // short page = last page
   }
 
-  const data = await res.json();
-  
   // Map Supabase fields back to React candidate schema
   return data.map(item => ({
     firstName: item.first_name || '',
@@ -50,7 +79,7 @@ export async function fetchCandidatesFromSupabase(url, key) {
 /**
  * Upsert candidates (insert new ones or update existing ones by primary key 'linkedin_url')
  */
-export async function upsertCandidatesToSupabase(url, key, candidates) {
+export async function upsertCandidatesToSupabase(url, key, candidates, accessToken) {
   if (!candidates || candidates.length === 0) return;
 
   const cleanBaseUrl = url.replace(/\/$/, '');
@@ -89,8 +118,7 @@ export async function upsertCandidatesToSupabase(url, key, candidates) {
     const res = await fetch(`${cleanBaseUrl}/rest/v1/candidates`, {
       method: 'POST',
       headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
+        ...authHeaders(key, accessToken),
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates' // Tells postgrest to upsert on duplicate primary key
       },
@@ -107,7 +135,7 @@ export async function upsertCandidatesToSupabase(url, key, candidates) {
 /**
  * Delete a candidate from Supabase using their linkedin_url
  */
-export async function deleteCandidateFromSupabase(url, key, candidate) {
+export async function deleteCandidateFromSupabase(url, key, candidate, accessToken) {
   const rawUrl = candidate.linkedinUrl || candidate.url || '';
   const uniqueUrl = cleanUrl(rawUrl);
   if (!uniqueUrl) return;
@@ -116,10 +144,7 @@ export async function deleteCandidateFromSupabase(url, key, candidate) {
 
   const res = await fetch(`${cleanBaseUrl}/rest/v1/candidates?linkedin_url=eq.${encodeURIComponent(uniqueUrl)}`, {
     method: 'DELETE',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`
-    }
+    headers: authHeaders(key, accessToken)
   });
 
   if (!res.ok) {
@@ -134,15 +159,11 @@ export async function deleteCandidateFromSupabase(url, key, candidate) {
  * across the whole team never grab the same page. Returns the 1-based page
  * this caller should scrape.
  */
-export async function reserveSearchPage(url, key, signature) {
+export async function reserveSearchPage(url, key, signature, accessToken) {
   const cleanBaseUrl = url.replace(/\/$/, '');
   const res = await fetch(`${cleanBaseUrl}/rest/v1/rpc/reserve_search_page`, {
     method: 'POST',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json'
-    },
+    headers: { ...authHeaders(key, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify({ p_signature: signature })
   });
 
@@ -160,15 +181,11 @@ export async function reserveSearchPage(url, key, signature) {
  * Read the current shared page for a query signature WITHOUT advancing it.
  * Returns 1 when no cursor exists yet.
  */
-export async function peekSearchPage(url, key, signature) {
+export async function peekSearchPage(url, key, signature, accessToken) {
   const cleanBaseUrl = url.replace(/\/$/, '');
   const res = await fetch(`${cleanBaseUrl}/rest/v1/rpc/peek_search_page`, {
     method: 'POST',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json'
-    },
+    headers: { ...authHeaders(key, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify({ p_signature: signature })
   });
 
@@ -185,15 +202,11 @@ export async function peekSearchPage(url, key, signature) {
 /**
  * Explicitly set the shared page for a query signature (manual page jump).
  */
-export async function setSearchPage(url, key, signature, page) {
+export async function setSearchPage(url, key, signature, page, accessToken) {
   const cleanBaseUrl = url.replace(/\/$/, '');
   const res = await fetch(`${cleanBaseUrl}/rest/v1/rpc/set_search_page`, {
     method: 'POST',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json'
-    },
+    headers: { ...authHeaders(key, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify({ p_signature: signature, p_page: Math.max(1, parseInt(page, 10) || 1) })
   });
 
@@ -206,15 +219,11 @@ export async function setSearchPage(url, key, signature, page) {
 /**
  * Reset the shared cursor for a query signature back to page 1.
  */
-export async function resetSearchPage(url, key, signature) {
+export async function resetSearchPage(url, key, signature, accessToken) {
   const cleanBaseUrl = url.replace(/\/$/, '');
   const res = await fetch(`${cleanBaseUrl}/rest/v1/rpc/reset_search_page`, {
     method: 'POST',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json'
-    },
+    headers: { ...authHeaders(key, accessToken), 'Content-Type': 'application/json' },
     body: JSON.stringify({ p_signature: signature })
   });
 
@@ -227,10 +236,10 @@ export async function resetSearchPage(url, key, signature) {
 /**
  * Log recruiter activity to 'recruiter_activities' in Supabase
  */
-export async function logRecruiterActivity(url, key, activity) {
+export async function logRecruiterActivity(url, key, activity, accessToken) {
   if (!url || !key) return;
   const cleanBaseUrl = url.replace(/\/$/, '');
-  
+
   const payload = {
     recruiter_email: activity.recruiterEmail,
     candidate_linkedin_url: cleanUrl(activity.candidateLinkedinUrl || activity.candidateUrl),
@@ -244,11 +253,7 @@ export async function logRecruiterActivity(url, key, activity) {
   try {
     const res = await fetch(`${cleanBaseUrl}/rest/v1/recruiter_activities`, {
       method: 'POST',
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { ...authHeaders(key, accessToken), 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
@@ -263,16 +268,13 @@ export async function logRecruiterActivity(url, key, activity) {
 /**
  * Fetch recruiter activities from Supabase
  */
-export async function fetchRecruiterActivities(url, key) {
+export async function fetchRecruiterActivities(url, key, accessToken) {
   if (!url || !key) return [];
   const cleanBaseUrl = url.replace(/\/$/, '');
-  
+
   const res = await fetch(`${cleanBaseUrl}/rest/v1/recruiter_activities?select=*&order=created_at.desc`, {
     method: 'GET',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`
-    }
+    headers: authHeaders(key, accessToken)
   });
 
   if (!res.ok) {
@@ -297,17 +299,14 @@ export async function fetchRecruiterActivities(url, key) {
 /**
  * Check if an email is in the approved_emails allowlist
  */
-export async function checkEmailApproved(url, key, email) {
+export async function checkEmailApproved(url, key, email, accessToken) {
   if (!url || !key || !email) return false;
   const cleanEmail = email.toLowerCase().trim();
   const cleanBaseUrl = url.replace(/\/$/, '');
-  
+
   const res = await fetch(`${cleanBaseUrl}/rest/v1/approved_emails?email=eq.${encodeURIComponent(cleanEmail)}&select=email`, {
     method: 'GET',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`
-    }
+    headers: authHeaders(key, accessToken)
   });
 
   if (!res.ok) {
@@ -322,16 +321,13 @@ export async function checkEmailApproved(url, key, email) {
 /**
  * Get all approved emails
  */
-export async function getApprovedEmails(url, key) {
+export async function getApprovedEmails(url, key, accessToken) {
   if (!url || !key) return [];
   const cleanBaseUrl = url.replace(/\/$/, '');
-  
+
   const res = await fetch(`${cleanBaseUrl}/rest/v1/approved_emails?select=*`, {
     method: 'GET',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`
-    }
+    headers: authHeaders(key, accessToken)
   });
 
   if (!res.ok) {
@@ -344,10 +340,10 @@ export async function getApprovedEmails(url, key) {
 /**
  * Add an email to the allowlist
  */
-export async function addApprovedEmail(url, key, email) {
+export async function addApprovedEmail(url, key, email, accessToken) {
   if (!url || !key || !email) return;
   const cleanBaseUrl = url.replace(/\/$/, '');
-  
+
   const payload = {
     email: email.toLowerCase().trim()
   };
@@ -355,8 +351,7 @@ export async function addApprovedEmail(url, key, email) {
   const res = await fetch(`${cleanBaseUrl}/rest/v1/approved_emails`, {
     method: 'POST',
     headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
+      ...authHeaders(key, accessToken),
       'Content-Type': 'application/json',
       'Prefer': 'resolution=merge-duplicates'
     },
@@ -371,17 +366,14 @@ export async function addApprovedEmail(url, key, email) {
 /**
  * Remove an email from the allowlist
  */
-export async function removeApprovedEmail(url, key, email) {
+export async function removeApprovedEmail(url, key, email, accessToken) {
   if (!url || !key || !email) return;
   const cleanBaseUrl = url.replace(/\/$/, '');
   const cleanEmail = email.toLowerCase().trim();
 
   const res = await fetch(`${cleanBaseUrl}/rest/v1/approved_emails?email=eq.${encodeURIComponent(cleanEmail)}`, {
     method: 'DELETE',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`
-    }
+    headers: authHeaders(key, accessToken)
   });
 
   if (!res.ok) {
@@ -392,16 +384,13 @@ export async function removeApprovedEmail(url, key, email) {
 /**
  * Get all pending user requests
  */
-export async function getPendingUsers(url, key) {
+export async function getPendingUsers(url, key, accessToken) {
   if (!url || !key) return [];
   const cleanBaseUrl = url.replace(/\/$/, '');
-  
+
   const res = await fetch(`${cleanBaseUrl}/rest/v1/pending_users?select=*`, {
     method: 'GET',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`
-    }
+    headers: authHeaders(key, accessToken)
   });
 
   if (!res.ok) {
@@ -415,10 +404,10 @@ export async function getPendingUsers(url, key) {
 /**
  * Add an email to the pending list
  */
-export async function addPendingUser(url, key, email) {
+export async function addPendingUser(url, key, email, accessToken) {
   if (!url || !key || !email) return;
   const cleanBaseUrl = url.replace(/\/$/, '');
-  
+
   const payload = {
     email: email.toLowerCase().trim()
   };
@@ -426,8 +415,7 @@ export async function addPendingUser(url, key, email) {
   const res = await fetch(`${cleanBaseUrl}/rest/v1/pending_users`, {
     method: 'POST',
     headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`,
+      ...authHeaders(key, accessToken),
       'Content-Type': 'application/json',
       'Prefer': 'resolution=merge-duplicates'
     },
@@ -443,17 +431,14 @@ export async function addPendingUser(url, key, email) {
 /**
  * Remove an email from the pending list
  */
-export async function removePendingUser(url, key, email) {
+export async function removePendingUser(url, key, email, accessToken) {
   if (!url || !key || !email) return;
   const cleanBaseUrl = url.replace(/\/$/, '');
   const cleanEmail = email.toLowerCase().trim();
 
   const res = await fetch(`${cleanBaseUrl}/rest/v1/pending_users?email=eq.${encodeURIComponent(cleanEmail)}`, {
     method: 'DELETE',
-    headers: {
-      'apikey': key,
-      'Authorization': `Bearer ${key}`
-    }
+    headers: authHeaders(key, accessToken)
   });
 
   if (!res.ok) {

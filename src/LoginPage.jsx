@@ -130,6 +130,11 @@ export default function LoginPage() {
       return;
     }
 
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
     // Domain Lock Check
     if (!cleanEmail.endsWith('@siliconpatterns.com') && cleanEmail !== 'adminsiliconpatterns@siliconpatterns.com') {
       setError('Access restricted. Only @siliconpatterns.com email addresses are authorized.');
@@ -163,20 +168,10 @@ export default function LoginPage() {
         })
       });
 
-      const { checkEmailApproved, addPendingUser } = await import('./supabase.js');
-      // Built-in admins are pre-authorized and skip the approval gate.
-      const isApproved = isAdminEmail(cleanEmail) || await checkEmailApproved(supabaseUrl, supabaseKey, cleanEmail);
-
-      if (!isApproved) {
-        // Add to pending_users table since they aren't on the allowlist
-        await addPendingUser(supabaseUrl, supabaseKey, cleanEmail);
-
-        setError('Account created. Waiting for administrator approval.');
-        setLoading(false);
-        return;
-      }
-      
-      // Step 1: Attempt Login
+      // Authenticate now (rather than after the approval check) so we hold a
+      // real user access token. RLS on approved_emails/pending_users only
+      // lets a user read/write their OWN row, which requires a genuine
+      // Supabase session — the shared anon key alone no longer qualifies.
       let loginRes = await fetch(`${cleanBaseUrl}/auth/v1/token?grant_type=password`, {
         method: 'POST',
         headers: {
@@ -202,6 +197,21 @@ export default function LoginPage() {
         throw new Error(parsedError);
       } else {
         authData = await loginRes.json();
+      }
+
+      const accessToken = authData?.access_token;
+
+      const { checkEmailApproved, addPendingUser } = await import('./supabase.js');
+      // Built-in admins are pre-authorized and skip the approval gate.
+      const isApproved = isAdminEmail(cleanEmail) || await checkEmailApproved(supabaseUrl, supabaseKey, cleanEmail, accessToken);
+
+      if (!isApproved) {
+        // Add to pending_users table since they aren't on the allowlist
+        await addPendingUser(supabaseUrl, supabaseKey, cleanEmail, accessToken);
+
+        setError('Account created. Waiting for administrator approval.');
+        setLoading(false);
+        return;
       }
 
       const username = cleanEmail.split('@')[0];
