@@ -841,7 +841,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
     const exportList = (Number.isFinite(n) && n > 0)
       ? filteredCandidates.slice(0, n)
       : filteredCandidates;
-    const headers = ['First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience (Years)', 'Current Company', 'Open To Work', 'LinkedIn URL'];
+    const headers = ['First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience (Years)', 'Current Company', 'Open To Work', 'Score', 'LinkedIn URL'];
 
     const cleanExtractUrl = (field) => {
       if (!field) return '';
@@ -889,8 +889,11 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       const positions = p.positions || p.experience || [];
       const expYears = computeTotalExperienceYears(positions);
       const currentCompany = getCurrentOrLastCompany(positions);
+      // Blank (not "0") for candidates never run through AI screening —
+      // 0 is a real low score, undefined/null means "not scored yet".
+      const score = (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : '';
 
-      return [safeExtractText(p.firstName), safeExtractText(p.lastName), title, loc, skills, about, expYears, currentCompany, openToWork, url]
+      return [safeExtractText(p.firstName), safeExtractText(p.lastName), title, loc, skills, about, expYears, currentCompany, openToWork, score, url]
         .map(escapeCsv)
         .join(',');
     });
