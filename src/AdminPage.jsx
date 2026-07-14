@@ -34,7 +34,7 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
     if (activeTab === 'performance' && supabaseUrl && supabaseKey) {
       setLoadingActivities(true);
       import('./supabase.js').then(({ fetchRecruiterActivities }) => {
-        fetchRecruiterActivities(supabaseUrl, supabaseKey)
+        fetchRecruiterActivities(supabaseUrl, supabaseKey, currentUser?.accessToken)
           .then(data => {
             setActivities(data);
           })
@@ -57,12 +57,12 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
       setLoadingEmails(true);
       setLoadingPending(true);
       import('./supabase.js').then(({ getApprovedEmails, getPendingUsers }) => {
-        getApprovedEmails(supabaseUrl, supabaseKey)
+        getApprovedEmails(supabaseUrl, supabaseKey, currentUser?.accessToken)
           .then(data => setApprovedEmails(data))
           .catch(err => console.error("Failed to load approved emails:", err))
           .finally(() => setLoadingEmails(false));
-          
-        getPendingUsers(supabaseUrl, supabaseKey)
+
+        getPendingUsers(supabaseUrl, supabaseKey, currentUser?.accessToken)
           .then(data => setPendingUsers(data))
           .catch(err => {
             console.error("Failed to load pending users:", err);
@@ -82,7 +82,7 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
     if (!newEmail.trim() || !supabaseUrl || !supabaseKey) return;
     try {
       const { addApprovedEmail } = await import('./supabase.js');
-      await addApprovedEmail(supabaseUrl, supabaseKey, newEmail);
+      await addApprovedEmail(supabaseUrl, supabaseKey, newEmail, currentUser?.accessToken);
       setApprovedEmails(prev => [...prev, { email: newEmail.toLowerCase().trim() }]);
       setNewEmail('');
     } catch (err) {
@@ -95,7 +95,7 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
     if (!window.confirm(`Remove ${emailToRemove} from allowlist?`)) return;
     try {
       const { removeApprovedEmail } = await import('./supabase.js');
-      await removeApprovedEmail(supabaseUrl, supabaseKey, emailToRemove);
+      await removeApprovedEmail(supabaseUrl, supabaseKey, emailToRemove, currentUser?.accessToken);
       setApprovedEmails(prev => prev.filter(e => e.email !== emailToRemove));
     } catch (err) {
       alert(err.message);
@@ -106,8 +106,8 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
     if (!supabaseUrl || !supabaseKey) return;
     try {
       const { addApprovedEmail, removePendingUser } = await import('./supabase.js');
-      await addApprovedEmail(supabaseUrl, supabaseKey, emailToApprove);
-      await removePendingUser(supabaseUrl, supabaseKey, emailToApprove);
+      await addApprovedEmail(supabaseUrl, supabaseKey, emailToApprove, currentUser?.accessToken);
+      await removePendingUser(supabaseUrl, supabaseKey, emailToApprove, currentUser?.accessToken);
       setApprovedEmails(prev => [...prev, { email: emailToApprove.toLowerCase().trim() }]);
       setPendingUsers(prev => prev.filter(e => e.email !== emailToApprove));
     } catch (err) {
@@ -120,7 +120,7 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
     if (!window.confirm(`Deny access for ${emailToDeny}?`)) return;
     try {
       const { removePendingUser } = await import('./supabase.js');
-      await removePendingUser(supabaseUrl, supabaseKey, emailToDeny);
+      await removePendingUser(supabaseUrl, supabaseKey, emailToDeny, currentUser?.accessToken);
       setPendingUsers(prev => prev.filter(e => e.email !== emailToDeny));
     } catch (err) {
       alert(err.message);

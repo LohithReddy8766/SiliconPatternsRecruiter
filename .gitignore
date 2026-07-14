@@ -24,5 +24,9 @@ dist-ssr
 *.sw?
 .env
 .env.*
+!.env.example
 
 .vercel
+
+# Claude Code local settings/session data — machine-specific, not shared
+.claude/

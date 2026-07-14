@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      # Lint has pre-existing findings from before CI was added (see README's
+      # Known limitations). Surfaced but non-blocking for now — flip off
+      # continue-on-error once that backlog is cleared so lint actually gates.
+      - run: npm run lint
+        continue-on-error: true
+      - run: npm run build
+      - run: npm test

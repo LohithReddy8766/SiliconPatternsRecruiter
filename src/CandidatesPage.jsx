@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
-import { isCandidateOpenToWork } from './App.jsx';
+import { isCandidateOpenToWork, isNewCandidate, jdContainsTerm } from './App.jsx';
 
 const STAGE_BADGES = {
   sourced: { label: 'Sourced', bg: 'var(--bg-surface)', text: 'var(--text-secondary)', border: 'var(--border-color)' },
@@ -11,6 +11,20 @@ const STAGE_BADGES = {
   hired: { label: 'Hired', bg: 'rgba(22, 163, 74, 0.15)', text: '#4ade80', border: 'rgba(74, 222, 128, 0.3)' },
   rejected: { label: 'Rejected', bg: 'rgba(220, 38, 38, 0.15)', text: '#f87171', border: 'rgba(248, 113, 113, 0.3)' }
 };
+
+// Scraped LinkedIn fields are attacker-influenced (a profile owner controls
+// their own title/about/etc.) and get interpolated into a raw HTML template
+// literal for the exported resume — escape before insertion so a title like
+// `<img src=x onerror=...>` renders as literal text instead of executing.
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 export function safeExtractText(field) {
   if (field === null || field === undefined) return 'N/A';
@@ -50,11 +64,13 @@ export function extractSkillsList(profile) {
 
 export function matchSkillFlexible(text, query) {
   if (!text || !query) return false;
+  
+  // 1. Try advanced search engine (exact boundaries + synonyms + fuzzy Levenshtein match)
+  if (jdContainsTerm(text, query)) return true;
+
+  // 2. Fallback to punctuation-insensitive and generation-insensitive match
   const tLower = text.toLowerCase();
   const qLower = query.toLowerCase();
-
-  if (tLower.includes(qLower)) return true;
-
   const normT = tLower.replace(/[\s\.\-_]/g, '');
   const normQ = qLower.replace(/[\s\.\-_]/g, '');
   if (normT.includes(normQ)) return true;
@@ -66,6 +82,70 @@ export function matchSkillFlexible(text, query) {
   return false;
 }
 
+const MONTH_ABBR = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+// Parse a LinkedIn-style duration string ("3 yrs 2 mos", "Jan 2020 - Present",
+// "Jan 2020 - Mar 2022 · 2 yrs 3 mos") into a total number of months.
+function parseDurationToMonths(str) {
+  if (!str) return 0;
+  const s = String(str).toLowerCase();
+
+  // Prefer an explicit "X yrs Y mos" summary if the scraper included one.
+  const yrMatch = s.match(/(\d+)\s*y(?:r|ear)s?/);
+  const moMatch = s.match(/(\d+)\s*mo(?:nth)?s?/);
+  if (yrMatch || moMatch) {
+    const years = yrMatch ? parseInt(yrMatch[1], 10) : 0;
+    const months = moMatch ? parseInt(moMatch[1], 10) : 0;
+    return years * 12 + months;
+  }
+
+  // Fall back to a "Mon YYYY - Mon YYYY" / "Mon YYYY - Present" date range.
+  const rangeMatch = s.match(/([a-z]{3,9})\.?\s+(\d{4})\s*[-–—]\s*(present|[a-z]{3,9}\.?\s+\d{4})/);
+  if (rangeMatch) {
+    const startMonth = MONTH_ABBR[rangeMatch[1].slice(0, 3)];
+    const startYear = parseInt(rangeMatch[2], 10);
+    if (startMonth === undefined || isNaN(startYear)) return 0;
+    let endMonth, endYear;
+    if (rangeMatch[3] === 'present') {
+      const now = new Date();
+      endMonth = now.getMonth();
+      endYear = now.getFullYear();
+    } else {
+      const endParts = rangeMatch[3].match(/([a-z]{3,9})\.?\s+(\d{4})/);
+      if (!endParts) return 0;
+      endMonth = MONTH_ABBR[endParts[1].slice(0, 3)];
+      endYear = parseInt(endParts[2], 10);
+    }
+    if (endMonth === undefined || isNaN(endYear)) return 0;
+    return Math.max(0, (endYear - startYear) * 12 + (endMonth - startMonth));
+  }
+
+  return 0;
+}
+
+// Total career experience across all listed positions, as decimal years
+// (e.g. 3.5). Returns '' when no position has a parseable duration, rather
+// than guessing.
+export function computeTotalExperienceYears(positions) {
+  if (!Array.isArray(positions) || positions.length === 0) return '';
+  let totalMonths = 0;
+  let matchedAny = false;
+  positions.forEach(pos => {
+    const months = parseDurationToMonths(pos.duration || pos.date || '');
+    if (months > 0) { totalMonths += months; matchedAny = true; }
+  });
+  return matchedAny ? (totalMonths / 12).toFixed(1) : '';
+}
+
+// The company from whichever position's duration says "Present"; if none is
+// marked current, falls back to the first (most recent) listed position.
+export function getCurrentOrLastCompany(positions) {
+  if (!Array.isArray(positions) || positions.length === 0) return '';
+  const current = positions.find(pos => String(pos.duration || pos.date || '').toLowerCase().includes('present'));
+  const chosen = current || positions[0];
+  return chosen.companyName || chosen.company || chosen.company_name || '';
+}
+
 export function downloadCandidateResume(profile) {
   const name = `${safeExtractText(profile.firstName)} ${safeExtractText(profile.lastName)}`.trim();
   const filename = `${name.replace(/\s+/g, '_')}_Resume.doc`;
@@ -73,7 +153,7 @@ export function downloadCandidateResume(profile) {
   // Format skills
   const skills = extractSkillsList(profile);
   const skillsHtml = skills && skills !== 'N/A' && skills !== ''
-    ? skills.split(', ').map(s => `<span style="background-color: #f3f4f6; border: 1px solid #e5e7eb; padding: 4px 8px; border-radius: 4px; display: inline-block; margin: 2px; font-size: 11px; font-family: Arial, sans-serif; color: #374151;">${s}</span>`).join(' ')
+    ? skills.split(', ').map(s => `<span style="background-color: #f3f4f6; border: 1px solid #e5e7eb; padding: 4px 8px; border-radius: 4px; display: inline-block; margin: 2px; font-size: 11px; font-family: Arial, sans-serif; color: #374151;">${escapeHtml(s)}</span>`).join(' ')
     : 'No skills documented';
 
   // Format experience
@@ -81,10 +161,10 @@ export function downloadCandidateResume(profile) {
   const positions = profile.positions || profile.experience || [];
   if (Array.isArray(positions) && positions.length > 0) {
     experienceHtml = positions.map(pos => {
-      const title = pos.title || 'Role';
-      const company = pos.companyName || pos.company || 'Company';
-      const duration = pos.duration || pos.date || '';
-      const desc = pos.description || '';
+      const title = escapeHtml(pos.title || 'Role');
+      const company = escapeHtml(pos.companyName || pos.company || 'Company');
+      const duration = escapeHtml(pos.duration || pos.date || '');
+      const desc = escapeHtml(pos.description || '');
       return `
         <div style="margin-bottom: 16px; font-family: Arial, sans-serif;">
           <table style="width: 100%; font-size: 13px; font-weight: bold; color: #111827;">
@@ -107,9 +187,9 @@ export function downloadCandidateResume(profile) {
   const educations = profile.educations || profile.education || [];
   if (Array.isArray(educations) && educations.length > 0) {
     educationHtml = educations.map(edu => {
-      const degree = edu.degreeName || 'Degree';
-      const school = edu.schoolName || edu.school || 'Institution';
-      const date = edu.date || edu.duration || '';
+      const degree = escapeHtml(edu.degreeName || 'Degree');
+      const school = escapeHtml(edu.schoolName || edu.school || 'Institution');
+      const date = escapeHtml(edu.date || edu.duration || '');
       return `
         <div style="margin-bottom: 10px; font-size: 12px; font-family: Arial, sans-serif; color: #374151;">
           <span style="font-weight: bold;">${degree}</span> — <span>${school}</span>
@@ -131,7 +211,7 @@ export function downloadCandidateResume(profile) {
         ${profile.agentReasoning ? `
           <div style="font-size: 12px; color: #581c87; line-height: 1.5; white-space: pre-line;">
             <strong>Evaluation Rationale:</strong><br/>
-            ${profile.agentReasoning}
+            ${escapeHtml(profile.agentReasoning)}
           </div>
         ` : ''}
       </div>
@@ -144,7 +224,7 @@ export function downloadCandidateResume(profile) {
           xmlns='http://www.w3.org/TR/REC-html40'>
     <head>
       <meta charset="utf-8">
-      <title>${name} - Resume</title>
+      <title>${escapeHtml(name)} - Resume</title>
       <!--[if gte mso 9]>
       <xml>
         <w:WordDocument>
@@ -164,14 +244,14 @@ export function downloadCandidateResume(profile) {
     </head>
     <body>
       <div style="font-family: Arial, sans-serif;">
-        <h1>${name}</h1>
-        <div class="title">${safeExtractText(profile.currentTitle || profile.jobTitle || profile.headline)}</div>
+        <h1>${escapeHtml(name)}</h1>
+        <div class="title">${escapeHtml(safeExtractText(profile.currentTitle || profile.jobTitle || profile.headline))}</div>
         <div class="meta">
-          ${safeExtractText(profile.location)} | ${safeExtractText(profile.linkedinUrl || profile.url)}
+          ${escapeHtml(safeExtractText(profile.location))} | ${escapeHtml(safeExtractText(profile.linkedinUrl || profile.url))}
         </div>
-        
+
         <h2>Professional Summary</h2>
-        <p>${safeExtractText(profile.about || profile.summary || 'Semiconductor engineering professional.')}</p>
+        <p>${escapeHtml(safeExtractText(profile.about || profile.summary || 'Semiconductor engineering professional.'))}</p>
         
         <h2>Core Technical Skills</h2>
         <div style="margin-bottom: 20px;">
@@ -374,11 +454,32 @@ Generate the JSON outreach sequence now.`
                 }}>
                   {STAGE_BADGES[profile.status || 'sourced'].label}
                 </span>
+                {isNewCandidate(profile) && (
+                  <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--accent-fg)', backgroundColor: 'var(--accent)', padding: '2px 7px', borderRadius: '10px' }}>
+                    NEW
+                  </span>
+                )}
                 {isCandidateOpenToWork(profile) && (
                   <span style={{ fontSize: '10px', fontWeight: '600', color: '#4ade80', backgroundColor: 'rgba(22, 163, 74, 0.15)', padding: '2px 7px', borderRadius: '10px', border: '1px solid rgba(74, 222, 128, 0.3)' }}>
                     OPEN TO WORK
                   </span>
                 )}
+                {profile.agentScore !== undefined && profile.agentScore !== null && (() => {
+                  const scoreColors = getScoreColor(profile.agentScore);
+                  return (
+                    <span style={{ 
+                      fontSize: '10px', 
+                      fontWeight: '800', 
+                      backgroundColor: scoreColors.bg, 
+                      color: scoreColors.text, 
+                      border: `1px solid ${scoreColors.border}`,
+                      padding: '2px 7px', 
+                      borderRadius: '4px' 
+                    }}>
+                      AI Score: {profile.agentScore}
+                    </span>
+                  );
+                })()}
               </div>
               <p style={{ margin: '3px 0 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {title}
@@ -686,6 +787,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   // Filter state
   const [searchText, setSearchText] = useState('');
   const [filterSkills, setFilterSkills] = useState([]);
+  const [skillFilterMode, setSkillFilterMode] = useState('all'); // 'all' = must have every skill, 'any' = at least one
   const [skillFilterInput, setSkillFilterInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [customFilterSkill, setCustomFilterSkill] = useState('');
@@ -701,6 +803,8 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   const filteredMasterSkills = availableMasterSkills.filter(s => s.toLowerCase().includes(skillFilterInput.toLowerCase()));
   const [filterLocation, setFilterLocation] = useState('');
   const [filterOpenToWork, setFilterOpenToWork] = useState(false);
+  const [filterExpMin, setFilterExpMin] = useState('');
+  const [filterExpMax, setFilterExpMax] = useState('');
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'compact'
 
@@ -737,27 +841,41 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
     const exportList = (Number.isFinite(n) && n > 0)
       ? filteredCandidates.slice(0, n)
       : filteredCandidates;
-    const headers = ['First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience Level', 'Open To Work', 'LinkedIn URL'];
+    const headers = ['First Name', 'Last Name', 'Current Title', 'Location', 'Skills', 'About', 'Experience (Years)', 'Current Company', 'Open To Work', 'Score', 'LinkedIn URL'];
+
+    const cleanExtractUrl = (field) => {
+      if (!field) return '';
+      if (typeof field === 'string') {
+        let u = field.trim();
+        if (u.startsWith('{') && u.endsWith('}')) {
+          try {
+            const parsed = JSON.parse(u);
+            const urlVal = parsed.url || parsed.linkedinUrl || parsed.linkedin_url || Object.values(parsed).find(v => typeof v === 'string' && (v.startsWith('http') || v.includes('linkedin.com')));
+            if (urlVal) return urlVal.trim();
+          } catch (e) {}
+        }
+        const match = u.match(/(https?:\/\/[^\s,"]+)/);
+        if (match) return match[1];
+        return u;
+      }
+      if (typeof field === 'object') {
+        const urlVal = field.url || field.linkedinUrl || field.linkedin_url || Object.values(field).find(v => typeof v === 'string' && (v.startsWith('http') || v.includes('linkedin.com')));
+        if (urlVal) return cleanExtractUrl(urlVal);
+      }
+      if (Array.isArray(field)) {
+        for (const item of field) {
+          const res = cleanExtractUrl(item);
+          if (res) return res;
+        }
+      }
+      return '';
+    };
 
     const escapeCsv = (str) => {
       if (str === null || str === undefined) return '""';
-      const s = String(str);
+      // Replace newlines and carriage returns with spaces to keep rows on a single line in CSV
+      const s = String(str).replace(/[\r\n]+/g, ' ').trim();
       return '"' + s.replace(/"/g, '""') + '"';
-    };
-
-    const getLevel = (title) => {
-      if (!title) return '';
-      const t = title.toLowerCase();
-      if (t.includes('chief') || t.includes('cto') || t.includes('ceo') || t.includes('cfo')) return 'C-Level';
-      if (t.includes('vp') || t.includes('vice president')) return 'VP';
-      if (t.includes('director')) return 'Director';
-      if (t.includes('manager')) return 'Manager';
-      if (t.includes('principal') || t.includes('architect')) return 'Principal/Architect';
-      if (t.includes('staff')) return 'Staff';
-      if (t.includes('senior') || t.includes('sr.') || t.includes('sr ')) return 'Senior';
-      if (t.includes('lead')) return 'Lead';
-      if (t.includes('junior') || t.includes('jr.') || t.includes('jr ')) return 'Junior';
-      return title; // fallback to title
     };
 
     const rows = exportList.map(p => {
@@ -765,19 +883,22 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
       const skills = extractSkillsList(p);
       const about = safeExtractText(p.about || p.summary);
-      const url = safeExtractText(p.linkedinUrl || p.url);
+      const url = cleanExtractUrl(p.linkedinUrl || p.url);
       const openToWork = isCandidateOpenToWork(p) ? 'Yes' : 'No';
 
-      let exp = 'N/A';
-      if (p.positions && Array.isArray(p.positions)) exp = p.positions.map(e => getLevel(e.title)).filter(Boolean).join(' | ');
-      else if (p.experience && Array.isArray(p.experience)) exp = p.experience.map(e => getLevel(e.title)).filter(Boolean).join(' | ');
+      const positions = p.positions || p.experience || [];
+      const expYears = computeTotalExperienceYears(positions);
+      const currentCompany = getCurrentOrLastCompany(positions);
+      // Blank (not "0") for candidates never run through AI screening —
+      // 0 is a real low score, undefined/null means "not scored yet".
+      const score = (p.agentScore !== undefined && p.agentScore !== null) ? p.agentScore : '';
 
-      return [safeExtractText(p.firstName), safeExtractText(p.lastName), title, loc, skills, about, exp, openToWork, url]
+      return [safeExtractText(p.firstName), safeExtractText(p.lastName), title, loc, skills, about, expYears, currentCompany, openToWork, score, url]
         .map(escapeCsv)
         .join(',');
     });
     const csv = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `Silicon_Patterns_${new Date().toISOString().split('T')[0]}.csv`;
@@ -800,16 +921,26 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   const filteredCandidates = useMemo(() => {
     let results = [...masterLeads];
 
-    // Text search across name, title, skills, about
+    // Text search — matches the query anywhere on the profile: name, current
+    // title, headline, skills, topSkills, about, location, AND the full work
+    // history (past titles, companies, role descriptions). A term like "UPF"
+    // is often only in an experience bullet, not tagged as a formal skill, so
+    // searching just name/title/skills would miss those people.
     if (searchText.trim()) {
       const q = searchText.trim();
       results = results.filter(p => {
-        const name = `${safeExtractText(p.firstName)} ${safeExtractText(p.lastName)}`;
-        const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
-        const skills = extractSkillsList(p);
-        const about = safeExtractText(p.about || p.summary);
-        const loc = safeExtractText(p.location);
-        return matchSkillFlexible(name, q) || matchSkillFlexible(title, q) || matchSkillFlexible(skills, q) || matchSkillFlexible(about, q) || matchSkillFlexible(loc, q);
+        const blob = [
+          `${safeExtractText(p.firstName)} ${safeExtractText(p.lastName)}`,
+          safeExtractText(p.currentTitle || p.jobTitle || p.headline),
+          safeExtractText(p.headline),
+          extractSkillsList(p),
+          Array.isArray(p.topSkills) ? p.topSkills.join(' ') : safeExtractText(p.topSkills),
+          safeExtractText(p.about || p.summary),
+          safeExtractText(p.location),
+          safeExtractText(p.positions || p.experience),
+          safeExtractText(p.educations || p.education)
+        ].filter(t => t && t !== 'N/A').join('  ');
+        return matchSkillFlexible(blob, q);
       });
     }
 
@@ -820,7 +951,9 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
         const title = safeExtractText(p.currentTitle || p.jobTitle || p.headline);
         const about = safeExtractText(p.about || p.summary);
         const fullText = `${skills} ${title} ${about}`;
-        return filterSkills.every(skill => matchSkillFlexible(fullText, skill));
+        return skillFilterMode === 'any'
+          ? filterSkills.some(skill => matchSkillFlexible(fullText, skill))
+          : filterSkills.every(skill => matchSkillFlexible(fullText, skill));
       });
     }
 
@@ -837,6 +970,23 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
       results = results.filter(p => isCandidateOpenToWork(p));
     }
 
+    // Experience filter — computed fresh from each candidate's own listed
+    // roles (same math as the CSV export), not a cached field, so it works
+    // for every candidate including ones scraped before this filter existed.
+    // Candidates whose experience can't be computed are excluded only while
+    // this filter is active, since "unknown" can't be confirmed to be in range.
+    if (filterExpMin !== '' || filterExpMax !== '') {
+      const min = filterExpMin !== '' ? parseFloat(filterExpMin) : null;
+      const max = filterExpMax !== '' ? parseFloat(filterExpMax) : null;
+      results = results.filter(p => {
+        const years = parseFloat(computeTotalExperienceYears(p.positions || p.experience || []));
+        if (!Number.isFinite(years)) return false;
+        if (min != null && years < min) return false;
+        if (max != null && years > max) return false;
+        return true;
+      });
+    }
+
     // Sort
     const getCreatedAt = (p) => p.createdAt ? new Date(p.createdAt).getTime() : 0;
     switch (sortBy) {
@@ -848,7 +998,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
     }
 
     return results;
-  }, [masterLeads, searchText, filterSkills, filterLocation, filterOpenToWork, sortBy]);
+  }, [masterLeads, searchText, filterSkills, skillFilterMode, filterLocation, filterOpenToWork, filterExpMin, filterExpMax, sortBy]);
 
   // Pagination logic
   const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / ITEMS_PER_PAGE));
@@ -861,15 +1011,17 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchText, filterSkills, filterLocation, filterOpenToWork, sortBy]);
+  }, [searchText, filterSkills, filterLocation, filterOpenToWork, filterExpMin, filterExpMax, sortBy]);
 
-  const hasActiveFilters = searchText || filterSkills.length > 0 || filterLocation || filterOpenToWork;
+  const hasActiveFilters = searchText || filterSkills.length > 0 || filterLocation || filterOpenToWork || filterExpMin !== '' || filterExpMax !== '';
 
   const resetFilters = () => {
     setSearchText('');
     setFilterSkills([]);
     setFilterLocation('');
     setFilterOpenToWork(false);
+    setFilterExpMin('');
+    setFilterExpMax('');
     setSkillFilterInput('');
     setSelectedCategory('All');
     setCurrentPage(1);
@@ -1011,11 +1163,51 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
             </span>
           </div>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', marginLeft: '8px' }} title="Filters by each candidate's actual computed experience (summed from their listed roles)">
+            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Exp:</span>
+            <input
+              type="number" min="0" max="50" placeholder="Min"
+              value={filterExpMin}
+              onChange={e => setFilterExpMin(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))}
+              style={{ width: '56px', padding: '6px 8px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none' }}
+            />
+            <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>-</span>
+            <input
+              type="number" min="0" max="50" placeholder="Max"
+              value={filterExpMax}
+              onChange={e => setFilterExpMax(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))}
+              style={{ width: '56px', padding: '6px 8px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none' }}
+            />
+            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>yrs</span>
+          </div>
+
         </div>
 
         {/* Collapsible Skill Filter Panel */}
         {showSkillFilter && (
           <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+            {/* Match mode toggle — only meaningful with 2+ skills selected */}
+            {filterSkills.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Match</span>
+                <div style={{ display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+                  {['any', 'all'].map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => setSkillFilterMode(mode)}
+                      style={{
+                        padding: '4px 12px', fontSize: '12px', fontWeight: '600', border: 'none', cursor: 'pointer',
+                        backgroundColor: skillFilterMode === mode ? 'var(--accent)' : 'transparent',
+                        color: skillFilterMode === mode ? 'var(--accent-fg)' : 'var(--text-secondary)',
+                      }}
+                    >{mode === 'any' ? 'Any' : 'All'}</button>
+                  ))}
+                </div>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {skillFilterMode === 'any' ? 'has at least one selected skill' : 'has every selected skill'}
+                </span>
+              </div>
+            )}
             {/* Selected skills as removable tags */}
             {filterSkills.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
@@ -1154,6 +1346,12 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
                         }}>
                           {STAGE_BADGES[p.status || 'sourced'].label}
                         </span>
+                        {isNewCandidate(p) && (
+                          <span style={{
+                            fontSize: '9px', fontWeight: '700', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)',
+                            padding: '1px 6px', borderRadius: '10px', display: 'inline-block', lineHeight: '1.2'
+                          }}>New</span>
+                        )}
                       </div>
                       <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title.substring(0, 50)}</p>
                     </div>

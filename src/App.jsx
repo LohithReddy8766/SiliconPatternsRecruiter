@@ -3,7 +3,7 @@ import { Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-
 import { AuthProvider, useAuth } from './AuthContext';
 import LoginPage from './LoginPage';
 import AdminPage from './AdminPage';
-import CandidatesPage from './CandidatesPage.jsx';
+import CandidatesPage, { computeTotalExperienceYears } from './CandidatesPage.jsx';
 import AIAgentPage from './AIAgentPage.jsx';
 import PipelinePage from './PipelinePage.jsx';
 import AnalyticsPage from './AnalyticsPage.jsx';
@@ -15,6 +15,23 @@ const ProtectedRoute = ({ children }) => {
   if (loading) return null;
   if (!currentUser) return <Navigate to="/login" replace />;
   return children;
+};
+
+// Admin-only route guard. Role comes from the server-verified session (see
+// AuthContext.resolveRole), so this can't be bypassed by editing localStorage.
+// Non-admins hitting an admin URL directly are bounced to their Talent Pool.
+const AdminRoute = ({ children }) => {
+  const { currentUser, loading } = useAuth();
+  if (loading) return null;
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== 'admin') return <Navigate to="/candidates" replace />;
+  return children;
+};
+
+// Send admins to Discovery, everyone else to their Talent Pool.
+const DefaultLanding = () => {
+  const { currentUser } = useAuth();
+  return <Navigate to={currentUser?.role === 'admin' ? '/search' : '/candidates'} replace />;
 };
 
 const DEFAULT_APIFY_TOKEN = import.meta.env.VITE_APIFY_API_TOKEN || '';
@@ -56,7 +73,7 @@ function extractSkillsList(profile) {
   return safeExtractText(profile.skills).replace(/[\r\n,"]/g, ' ');
 }
 
-function cleanUrl(url) {
+export function cleanUrl(url) {
   if (!url) return '';
   return url.split('?')[0].toLowerCase().trim();
 }
@@ -77,6 +94,32 @@ export function isCandidateOpenToWork(profile) {
   return false;
 }
 
+// Three-state check: true/false = candidate's computed experience is
+// in/out of the range that was requested when they were scraped; null =
+// no range was requested, or it couldn't be computed from their profile
+// (never treated as a mismatch — we just don't know).
+export function isExperienceInRange(candidate) {
+  const req = candidate.experienceRequested;
+  if (!req || (req.min == null && req.max == null)) return null;
+  const years = parseFloat(candidate.computedExperienceYears);
+  if (!Number.isFinite(years)) return null;
+  if (req.min != null && years < req.min) return false;
+  if (req.max != null && years > req.max) return false;
+  return true;
+}
+
+// Whether a candidate was part of the most recent scrape run on this device
+// (localStorage-backed, set — replaced, not appended — each time a search
+// completes; see SearchPage's handleSearch). Not synced across teammates.
+export function isNewCandidate(candidate) {
+  try {
+    const urls = new Set(JSON.parse(localStorage.getItem('siliconPatternsLastRunUrls') || '[]'));
+    return urls.has(cleanUrl(candidate.linkedinUrl || candidate.url));
+  } catch {
+    return false;
+  }
+}
+
 const designationOptions = [
   "Verification Engineer", "ASIC Design Engineer", "Physical Design Engineer",
   "DFT Engineer", "SoC Architect", "Analog Design Engineer", "RTL Design Engineer"
@@ -94,7 +137,9 @@ const companyOptions = [
   "Intel", "AMD", "Qualcomm", "NVIDIA", "Apple", "Broadcom", "MediaTek", "Marvell", "Texas Instruments", "Arm"
 ];
 // harvestapi yearsOfExperienceIds is a fixed 1-5 scale. Value "6" is invalid
-// and silently breaks the run, so the options are mapped to the real buckets.
+// and silently breaks the run. Still used to give the actor a reasonable
+// experience filter to search with; the exact min/max the recruiter types
+// is what actually gets verified against each candidate after scraping.
 const experienceOptions = [
   { label: "Less than 1 year", value: "1" },
   { label: "Junior (1-2 years)", value: "2" },
@@ -102,6 +147,9 @@ const experienceOptions = [
   { label: "Senior (6-10 years)", value: "4" },
   { label: "Lead/Staff (10+ years)", value: "5" }
 ];
+// Approximate [min, max] years each bucket represents — used to recover a
+// usable numeric range from AI-parsed JDs, which only return bucket ids.
+const EXPERIENCE_ID_RANGES = { '1': [0, 1], '2': [1, 2], '3': [3, 5], '4': [6, 10], '5': [10, 99] };
 
 // --- Job Description auto-parsing ---------------------------------------
 // Short skills that are distinctive enough to keyword-match safely in the
@@ -112,38 +160,153 @@ const SHORT_SKILL_ALLOWLIST = new Set([
   'UPF', 'CPF', 'CXL', 'MIPI', 'UFS', 'HBM', 'GDDR', 'eMMC', 'NVMe', 'SATA',
   'USB', 'STA', 'CTS', 'ECO', 'RTL', 'SoC', 'DDR2', 'DDR3', 'DDR4', 'DDR5'
 ]);
-// FPGA/lab terms that aren't in the ASIC skills taxonomy but are worth
-// pulling out of a JD so FPGA roles autofill sensibly.
+// Lab/interface terms worth pulling out of a JD for autofill even though they
+// aren't a distinct skill category of their own (FPGA-specific terms now live
+// as real, selectable skills in skills.js under "FPGA / Prototyping").
 const JD_EXTRA_TERMS = [
-  'FPGA', 'Vivado', 'Quartus', 'Quartus Prime', 'Xilinx', 'Altera', 'Alveo',
-  'Stratix', 'SignalTap', 'ChipScope', 'AXI', 'JTAG', 'Bitstream', 'HLS',
-  'OpenCL', 'SmartNIC', 'PCIe', 'DDR', 'Linux', 'RTL'
+  'AXI', 'JTAG', 'HLS', 'OpenCL', 'SmartNIC', 'PCIe', 'DDR', 'Linux', 'RTL', 'Quartus'
 ];
 
-// Match a term as a whole word (so "C" doesn't hit every word, "CAN" doesn't
-// hit "can"). Treats +, # as word chars so "C++" / "C#" match correctly.
-function jdContainsTerm(text, term) {
-  const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  try {
-    return new RegExp(`(?<![A-Za-z0-9+#])${esc}(?![A-Za-z0-9+#])`, 'i').test(text);
-  } catch {
-    return text.toLowerCase().includes(term.toLowerCase());
+// A comprehensive domain-specific synonym map for hardware and software recruiting
+export const SYNONYM_MAP = {
+  'dv': ['design verification', 'verification', 'verification engineer', 'systemverilog verification'],
+  'design verification': ['dv', 'verification', 'verification engineer', 'systemverilog verification'],
+  'verification': ['dv', 'design verification', 'verification engineer', 'systemverilog verification'],
+  
+  'dft': ['design for test', 'design for testability', 'scan insertion', 'atpg', 'mbist', 'jtag', 'tessent'],
+  'design for test': ['dft', 'design for testability', 'scan insertion', 'atpg', 'mbist', 'jtag', 'tessent'],
+  'design for testability': ['dft', 'design for test', 'scan insertion', 'atpg', 'mbist', 'jtag', 'tessent'],
+  
+  'physical design': ['pd', 'layout engineer', 'floorplanning', 'cts', 'routing', 'innovus', 'icc2'],
+  'pd': ['physical design', 'layout engineer', 'floorplanning', 'cts', 'routing', 'innovus', 'icc2'],
+  
+  'rtl': ['design engineer', 'rtl design', 'verilog', 'systemverilog rtl', 'vhdl', 'microarchitecture'],
+  'rtl design': ['rtl', 'design engineer', 'verilog', 'systemverilog rtl', 'vhdl', 'microarchitecture'],
+  
+  'asic': ['soc', 'system on chip', 'fpga', 'microarchitecture'],
+  'soc': ['asic', 'system on chip', 'fpga'],
+  'system on chip': ['asic', 'soc', 'fpga'],
+  
+  'pcie': ['pci express', 'pci-e'],
+  'pci express': ['pcie', 'pci-e'],
+  
+  'uvm': ['universal verification methodology', 'uvm framework'],
+  'universal verification methodology': ['uvm', 'uvm framework'],
+  
+  'sta': ['static timing analysis', 'synthesis', 'timing closure', 'primetime'],
+  'static timing analysis': ['sta', 'synthesis', 'timing closure', 'primetime'],
+  
+  'analog': ['mixed signal', 'rf', 'custom layout', 'virtuoso', 'spectre'],
+  'mixed signal': ['analog', 'rf', 'custom layout', 'virtuoso', 'spectre'],
+  
+  'emulation': ['zebu', 'palladium', 'veloce', 'fpga prototyping'],
+  'fpga prototyping': ['emulation', 'zebu', 'palladium', 'veloce', 'fpga'],
+  
+  'embedded': ['firmware', 'rtos', 'freertos', 'qnx', 'vxworks', 'microcontroller'],
+  'firmware': ['embedded', 'rtos', 'freertos', 'qnx', 'vxworks', 'microcontroller'],
+  
+  'security': ['cryptography', 'crypto', 'aes', 'rsa', 'ecc', 'root of trust'],
+  'crypto': ['security', 'cryptography', 'aes', 'rsa', 'ecc', 'root of trust'],
+  'cryptography': ['security', 'crypto', 'aes', 'rsa', 'ecc', 'root of trust'],
+  
+  'cuda': ['gpu programming', 'rocm', 'nvidia jetson', 'gpgpu'],
+  'gpu programming': ['cuda', 'rocm', 'nvidia jetson', 'gpgpu']
+};
+
+// Fast Levenshtein distance calculation
+function getLevenshteinDistance(a, b) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        );
+      }
+    }
   }
+  return matrix[b.length][a.length];
 }
 
-function yearsToExperienceId(years) {
-  if (years < 1) return '1';
-  if (years <= 2) return '2';
-  if (years <= 5) return '3';
-  if (years <= 10) return '4';
-  return '5';
+// Check if candidate text contains a term with lookaround boundaries or fuzzy word matching
+function containsTermFuzzy(text, term) {
+  if (!text || !term) return false;
+  const tLower = text.toLowerCase();
+  const qLower = term.trim().toLowerCase();
+
+  // 1. Check exact whole-word match using regex lookaround boundaries.
+  // Treats +, # as word chars so "C++" / "C#" match correctly.
+  const esc = qLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    const rx = new RegExp(`(?<![A-Za-z0-9+#])${esc}(?![A-Za-z0-9+#])`, 'i');
+    if (rx.test(tLower)) return true;
+  } catch {
+    if (tLower.includes(qLower)) return true;
+  }
+
+  // 2. Perform typo-tolerant fuzzy matching on individual words/tokens.
+  // We gate fuzzy matching so it doesn't match very short abbreviations (e.g. "C" or "DV") inaccurately.
+  if (qLower.length < 4) return false;
+
+  // Split candidate text into clean words
+  const words = tLower.split(/[^a-za-z0-9+#]+/);
+  // Allow 1 typo for words of length 4 to 7, and 2 typos for words of length 8+
+  const threshold = qLower.length >= 8 ? 2 : 1;
+
+  for (const w of words) {
+    if (Math.abs(w.length - qLower.length) > threshold) continue;
+    if (getLevenshteinDistance(w, qLower) <= threshold) {
+      return true;
+    }
+  }
+  return false;
 }
 
+// Unified search function: Exact match + Synonym expansion + Fuzzy typo tolerance
+export function jdContainsTerm(text, term) {
+  if (!text || !term) return false;
+  const cleanText = String(text);
+  const cleanTerm = String(term).trim();
+
+  // 1. Direct fuzzy check for the search term
+  if (containsTermFuzzy(cleanText, cleanTerm)) return true;
+
+  // 2. Expand synonyms (if mapped)
+  const key = cleanTerm.toLowerCase();
+  const synonyms = SYNONYM_MAP[key];
+  if (synonyms && Array.isArray(synonyms)) {
+    for (const syn of synonyms) {
+      if (containsTermFuzzy(cleanText, syn)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+// Every bucket whose OWN range overlaps [minYears, maxYears] at all — not
+// just the two buckets the endpoints happen to fall in. Mapping only the
+// endpoints (e.g. 5 -> bucket 3, 12 -> bucket 5) silently skips whole
+// buckets in between (bucket 4, "6-10yr", never gets sent for a 5-12
+// search), which quietly excludes a large chunk of real matches.
 function mapExperienceRange(minYears, maxYears) {
-  const ids = new Set();
-  if (minYears != null && !isNaN(minYears)) ids.add(yearsToExperienceId(minYears));
-  if (maxYears != null && !isNaN(maxYears)) ids.add(yearsToExperienceId(maxYears));
-  return [...ids];
+  const lo = (minYears != null && !isNaN(minYears)) ? minYears : 0;
+  const hi = (maxYears != null && !isNaN(maxYears)) ? maxYears : 999;
+  if (lo > hi) return [];
+  const ids = [];
+  Object.entries(EXPERIENCE_ID_RANGES).forEach(([id, [bucketMin, bucketMax]]) => {
+    if (bucketMax >= lo && bucketMin <= hi) ids.push(id);
+  });
+  return ids;
 }
 
 // Extract known/likely skills mentioned in a chunk of text.
@@ -165,7 +328,11 @@ function extractSkillsFromText(text) {
 function parseJdLocally(text) {
   // Split off a "good to have / nice to have / preferred / bonus" section so
   // those skills become optional rather than required.
-  const gthRe = /(good to have|nice[- ]to[- ]have|preferred|preferable|desirable|bonus|added advantage|would be a plus|pluses|plus points|good to know)/i;
+  // NOTE: "preferred" deliberately excludes "Preferred Experience"/"Preferred
+  // Qualifications" headings — those describe desired background, not a
+  // bonus-skills callout, and would otherwise misclassify everything after
+  // them (including real must-have skills) as merely optional.
+  const gthRe = /(good to have|nice[- ]to[- ]have|preferred(?!\s+(experience|qualifications?))|preferable|desirable|bonus|added advantage|would be a plus|pluses|plus points|good to know)/i;
   let requiredText = text;
   let optionalText = '';
   const gth = text.match(gthRe);
@@ -200,12 +367,22 @@ function parseJdLocally(text) {
   }
 
   let experienceIds = [];
+  let minExperienceYears = null;
+  let maxExperienceYears = null;
   const range = text.match(/(\d{1,2})\s*(?:[-–—]|to)\s*(\d{1,2})\s*\+?\s*years?/i);
   const plus = text.match(/(\d{1,2})\s*\+\s*years?/i);
   const single = text.match(/(\d{1,2})\s*years?/i);
-  if (range) experienceIds = mapExperienceRange(parseInt(range[1]), parseInt(range[2]));
-  else if (plus) experienceIds = mapExperienceRange(parseInt(plus[1]), 99);
-  else if (single) experienceIds = mapExperienceRange(parseInt(single[1]), parseInt(single[1]));
+  if (range) {
+    minExperienceYears = parseInt(range[1], 10);
+    maxExperienceYears = parseInt(range[2], 10);
+    experienceIds = mapExperienceRange(minExperienceYears, maxExperienceYears);
+  } else if (plus) {
+    minExperienceYears = parseInt(plus[1], 10);
+    experienceIds = mapExperienceRange(minExperienceYears, 99);
+  } else if (single) {
+    minExperienceYears = maxExperienceYears = parseInt(single[1], 10);
+    experienceIds = mapExperienceRange(minExperienceYears, maxExperienceYears);
+  }
 
   const openToWork = /open to work|actively looking|immediate joiner|notice period/i.test(text);
 
@@ -216,6 +393,8 @@ function parseJdLocally(text) {
     locations: [...new Set(locations)],
     companies: [...new Set(companies)],
     experienceIds,
+    minExperienceYears,
+    maxExperienceYears,
     openToWork
   };
 }
@@ -227,7 +406,7 @@ async function parseJdWithGroq(text, apiKey) {
   const system = `You extract structured LinkedIn sourcing filters from a job description.
 Return ONLY a valid JSON object with this exact shape:
 {
-  "skills": string[],         // 5-12 REQUIRED / must-have technical skills (from "Required Skills", core responsibilities). Prefer canonical names from the list; add clearly-required ones not in it. NO soft skills.
+  "skills": string[],         // 5-12 REQUIRED / must-have technical skills (from "Required Skills"/"Screening Criteria", core responsibilities). Use the JD's own specific wording for named skills or processes (e.g. "FPGA Prototyping", "ASIC RTL Migration") rather than collapsing them into a more generic canonical term — only use a canonical name from the list below when the JD doesn't name something more specific. NO soft skills.
   "optionalSkills": string[], // ONLY skills the JD lists as nice-to-have: sections like "Good to Have", "Nice to have", "Preferred", "Bonus", "Plus", "Desirable". If the JD has NO such section, return []. Never duplicate anything already in "skills".
   "designations": string[],   // 2-5 likely LinkedIn job titles for this role
   "locations": string[],      // city/region names, e.g. "Bengaluru" (use "Bengaluru" not "Bangalore")
@@ -260,6 +439,17 @@ Respond with JSON only, no prose or markdown.`;
   const validExp = new Set(experienceOptions.map(o => o.value));
   const req = Array.isArray(parsed.skills) ? parsed.skills : [];
   const reqSet = new Set(req.map(s => String(s).toLowerCase()));
+  const experienceIds = (Array.isArray(parsed.experienceIds) ? parsed.experienceIds : []).map(String).filter(id => validExp.has(id));
+  // Groq only returns bucket ids, not raw years — recover an approximate
+  // numeric range from the buckets it picked so the UI can show real numbers.
+  let minExperienceYears = null, maxExperienceYears = null;
+  if (experienceIds.length > 0) {
+    const ranges = experienceIds.map(id => EXPERIENCE_ID_RANGES[id]).filter(Boolean);
+    if (ranges.length > 0) {
+      minExperienceYears = Math.min(...ranges.map(r => r[0]));
+      maxExperienceYears = Math.max(...ranges.map(r => r[1]));
+    }
+  }
   return {
     skills: req,
     // Drop any optional skill that duplicates a required one.
@@ -267,7 +457,9 @@ Respond with JSON only, no prose or markdown.`;
     designations: Array.isArray(parsed.designations) ? parsed.designations : [],
     locations: Array.isArray(parsed.locations) ? parsed.locations : [],
     companies: Array.isArray(parsed.companies) ? parsed.companies : [],
-    experienceIds: (Array.isArray(parsed.experienceIds) ? parsed.experienceIds : []).map(String).filter(id => validExp.has(id)),
+    experienceIds,
+    minExperienceYears,
+    maxExperienceYears,
     openToWork: typeof parsed.openToWork === 'boolean' ? parsed.openToWork : false
   };
 }
@@ -278,7 +470,7 @@ Respond with JSON only, no prose or markdown.`;
 // ever runs. Must-have skills dominate; nice-to-have skills, job title and
 // location add bonuses. Only the filters the recruiter actually set count
 // toward the score, so it normalises to a clean 0-100.
-export function computeMatchScore(profile, requiredSkills = [], optionalSkills = [], targetDesignations = [], targetLocations = []) {
+export function computeMatchScore(profile, requiredSkills = [], optionalSkills = [], targetDesignations = [], targetLocations = [], prioritySkills = []) {
   const skillBlob = [
     safeExtractText(profile.headline),
     safeExtractText(profile.about || profile.summary),
@@ -293,8 +485,15 @@ export function computeMatchScore(profile, requiredSkills = [], optionalSkills =
 
   if (requiredSkills.length > 0) {
     possible += 55;
-    const hits = requiredSkills.filter(s => jdContainsTerm(skillBlob, s)).length;
-    earned += (hits / requiredSkills.length) * 55;
+    // Priority skills (starred by the recruiter) count for more within the
+    // must-have budget, so candidates who have them rank above candidates who
+    // only have the other must-haves.
+    const PRIORITY_WEIGHT = 2.5;
+    const weights = requiredSkills.map(s => prioritySkills.includes(s) ? PRIORITY_WEIGHT : 1);
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    requiredSkills.forEach((s, i) => {
+      if (jdContainsTerm(skillBlob, s)) earned += (weights[i] / totalWeight) * 55;
+    });
   }
 
   if (optionalSkills.length > 0) {
@@ -335,12 +534,21 @@ function TagSelect({ options, selected, onChange, placeholder, allowCustom = tru
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Fields labeled "(comma-separated)" need to actually split on commas —
+  // typing "A, B, C" and pressing Enter should add three tags, not one tag
+  // containing literal commas.
+  const addCustomEntries = (value) => {
+    const parts = value.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length === 0) return;
+    const merged = [...selected];
+    parts.forEach(p => { if (!merged.includes(p)) merged.push(p); });
+    if (merged.length > selected.length) onChange(merged);
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && inputValue.trim()) {
       e.preventDefault();
-      if (allowCustom && !selected.includes(inputValue.trim())) {
-        onChange([...selected, inputValue.trim()]);
-      }
+      if (allowCustom) addCustomEntries(inputValue);
       setInputValue('');
       setIsOpen(false);
     }
@@ -417,7 +625,7 @@ function TagSelect({ options, selected, onChange, placeholder, allowCustom = tru
           {allowCustom && inputValue.trim() && !options.some(o => (typeof o === 'object' ? o.label : o).toLowerCase() === inputValue.trim().toLowerCase()) && (
             <div
               onClick={() => {
-                if (!selected.includes(inputValue.trim())) onChange([...selected, inputValue.trim()]);
+                addCustomEntries(inputValue);
                 setInputValue('');
               }}
               style={{
@@ -427,7 +635,10 @@ function TagSelect({ options, selected, onChange, placeholder, allowCustom = tru
               }}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              Add “{inputValue.trim()}”
+              {(() => {
+                const parts = inputValue.split(',').map(s => s.trim()).filter(Boolean);
+                return parts.length > 1 ? `Add ${parts.length} (${parts.join(', ')})` : `Add “${parts[0] || inputValue.trim()}”`;
+              })()}
             </div>
           )}
           {filteredOptions.map(opt => {
@@ -500,7 +711,7 @@ function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
         <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px', paddingLeft: '8px' }}>Workspace</div>
         {[
-          { label: 'Discovery', path: '/search', active: isSearch, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> },
+          ...(currentUser?.role === 'admin' ? [{ label: 'Discovery', path: '/search', active: isSearch, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> }] : []),
           { label: candidateCount > 0 ? `Talent Pool (${candidateCount})` : 'Talent Pool', path: '/candidates', active: isCandidates, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> },
           { label: 'Evaluation', path: '/agent', active: location.pathname === '/agent', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="15" x2="23" y2="15"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="15" x2="4" y2="15"></line></svg> },
           { label: 'Recruitment', path: '/pipeline', active: location.pathname === '/pipeline', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg> },
@@ -586,10 +797,17 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const { currentUser } = useAuth();
   const [selectedSkills, setSelectedSkills] = useState([]); // must-have (filters the query)
   const [optionalSkills, setOptionalSkills] = useState([]); // nice-to-have (boosts ranking only)
+  const [prioritySkills, setPrioritySkills] = useState([]); // starred subset of must-have — weighted higher in ranking
   const [companies, setCompanies] = useState([]);
   const [location, setLocation] = useState([]);
   const [designation, setDesignation] = useState([]);
-  const [experience, setExperience] = useState([]);
+  // Exact experience range, in years. '' = unset. Used two ways: mapped to
+  // the actor's coarse 1-5 bucket to scope the search, AND checked precisely
+  // against each candidate's own computed total experience after scraping —
+  // never used to discard anyone (same lesson as Open-to-Work: don't throw
+  // away profiles you already paid to scrape).
+  const [expMinYears, setExpMinYears] = useState('');
+  const [expMaxYears, setExpMaxYears] = useState('');
   // How selected skills combine in the query: 'any' = OR (broad recall),
   // 'all' = AND (strict — profile must mention every skill).
   const [skillMatchMode, setSkillMatchMode] = useState('any');
@@ -602,6 +820,12 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const runIdRef = useRef(null);
   const stopRequestedRef = useRef(false);
   const [latestRunResults, setLatestRunResults] = useState([]);
+  // URLs added by the most recent scrape, persisted so the "New" tag survives
+  // navigation/reload — and gets replaced (not appended to) by the next scrape.
+  const [newCandidateUrls, setNewCandidateUrls] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('siliconPatternsLastRunUrls') || '[]')); }
+    catch { return new Set(); }
+  });
   const [skillFilter, setSkillFilter] = useState('');
   const [customSkill, setCustomSkill] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -638,7 +862,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const getQuerySignature = () => JSON.stringify({
     s: [...selectedSkills].sort(),
     d: [...designation].sort(),
-    e: [...experience].sort(),
+    e: `${expMinYears}-${expMaxYears}`,
     l: [...location].sort(),
     c: [...companies].sort(),
     m: skillMatchMode
@@ -668,7 +892,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     if (globalCursor) {
       try {
         const { setSearchPage } = await import('./supabase.js');
-        await setSearchPage(supabaseUrl, supabaseKey, sig, p);
+        await setSearchPage(supabaseUrl, supabaseKey, sig, p, currentUser?.accessToken);
         return;
       } catch (e) {
         console.error('Failed to sync shared page, using local fallback:', e);
@@ -686,7 +910,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     if (globalCursor) {
       setPageSyncing(true);
       import('./supabase.js')
-        .then(({ peekSearchPage }) => peekSearchPage(supabaseUrl, supabaseKey, sig))
+        .then(({ peekSearchPage }) => peekSearchPage(supabaseUrl, supabaseKey, sig, currentUser?.accessToken))
         .then(p => { if (!cancelled) setPageInput(p); })
         .catch(() => { if (!cancelled) setPageInput(readLocalPageForSig(sig)); })
         .finally(() => { if (!cancelled) setPageSyncing(false); });
@@ -695,7 +919,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSkills, designation, experience, location, companies, skillMatchMode, globalCursor, supabaseUrl, supabaseKey]);
+  }, [selectedSkills, designation, expMinYears, expMaxYears, location, companies, skillMatchMode, globalCursor, supabaseUrl, supabaseKey]);
 
   // User manually typed a page number — clamp and persist it.
   const commitPageInput = (value) => {
@@ -720,8 +944,8 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     setDesignation(clean(p.designations));
     setLocation(clean(p.locations));
     setCompanies(clean(p.companies));
-    const validExp = new Set(experienceOptions.map(o => o.value));
-    setExperience((p.experienceIds || []).map(String).filter(id => validExp.has(id)));
+    if (typeof p.minExperienceYears === 'number') setExpMinYears(String(p.minExperienceYears));
+    if (typeof p.maxExperienceYears === 'number') setExpMaxYears(String(p.maxExperienceYears));
     return required.length + clean(p.designations).length;
   };
 
@@ -780,15 +1004,19 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   };
 
   const getCurrentParams = () => ({
-    selectedSkills, optionalSkills, designation, experience, location, companies, maxItems, skillMatchMode
+    selectedSkills, optionalSkills, prioritySkills, designation, expMinYears, expMaxYears, location, companies, maxItems, skillMatchMode
   });
 
   const applyParams = (p) => {
     if (!p) return;
-    setSelectedSkills(p.selectedSkills || []);
+    const restoredSkills = p.selectedSkills || [];
+    setSelectedSkills(restoredSkills);
     setOptionalSkills(p.optionalSkills || []);
+    // Priority is only meaningful for skills that are still must-have.
+    setPrioritySkills((p.prioritySkills || []).filter(s => restoredSkills.includes(s)));
     setDesignation(p.designation || []);
-    setExperience(p.experience || []);
+    setExpMinYears(p.expMinYears ?? '');
+    setExpMaxYears(p.expMaxYears ?? '');
     setLocation(p.location || []);
     setCompanies(p.companies || []);
     if (p.maxItems) setMaxItems(p.maxItems);
@@ -824,7 +1052,16 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   };
 
   const toggleSkill = (skill) => {
-    setSelectedSkills(prev => prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]);
+    setSelectedSkills(prev => {
+      const isRemoving = prev.includes(skill);
+      // A skill can't stay "priority" once it's no longer must-have.
+      if (isRemoving) setPrioritySkills(ps => ps.filter(s => s !== skill));
+      return isRemoving ? prev.filter(s => s !== skill) : [...prev, skill];
+    });
+  };
+
+  const togglePrioritySkill = (skill) => {
+    setPrioritySkills(prev => prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]);
   };
 
   // Gracefully stop the current run — keeps whatever was scraped so far.
@@ -871,14 +1108,52 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       // 'any' → OR (broad recall), 'all' → AND (strict, must mention every skill).
       const joiner = skillMatchMode === 'all' ? ' AND ' : ' OR ';
       const skillQuery = selectedSkills.map(expandSkillForQuery).join(joiner);
-      const finalQuery = selectedSkills.length > 1 ? `(${skillQuery})` : skillQuery;
+      const fullSkillGroup = selectedSkills.length > 1 ? `(${skillQuery})` : skillQuery;
+
+      // In Match-any mode, starred (priority) skills change the QUERY itself,
+      // not just the ranking: require at least one priority skill to actually
+      // surface more people who have it, instead of treating it the same as
+      // every other must-have. ANDing the priority group onto the full OR
+      // group means every result must include a priority skill, while the
+      // other must-haves remain optional extras. No effect in Match-all mode
+      // (everything is already required there), and no effect if every
+      // must-have skill is starred (nothing left to narrow against).
+      let finalQuery = fullSkillGroup;
+      if (skillMatchMode !== 'all' && prioritySkills.length > 0 && prioritySkills.length < selectedSkills.length) {
+        const priorityQuery = prioritySkills.map(expandSkillForQuery).join(' OR ');
+        finalQuery = `(${priorityQuery}) AND ${fullSkillGroup}`;
+      }
 
       // Page-advance: pull the page shown in the (editable) page selector so
       // each run brings fresh people instead of re-scraping the same first 25.
       // The selector is backed by the shared cursor in global mode.
       const querySignature = getQuerySignature();
       const useGlobalCursor = globalCursor;
-      const startPage = Math.max(1, parseInt(pageInput, 10) || 1);
+      let startPage = Math.max(1, parseInt(pageInput, 10) || 1);
+
+      // In global (shared-team) mode, atomically reserve the page right
+      // before actually launching the scrape — rather than trusting the
+      // last-peeked pageInput — so two recruiters submitting near-identical
+      // searches at the same moment never both scrape (and pay for) the
+      // same page. Falls back to the peeked value if the reservation call
+      // fails, so a transient network error doesn't block the search.
+      if (useGlobalCursor) {
+        try {
+          const { reserveSearchPage } = await import('./supabase.js');
+          startPage = await reserveSearchPage(supabaseUrl, supabaseKey, querySignature, currentUser?.accessToken);
+          setPageInput(startPage);
+        } catch (e) {
+          console.error('Failed to reserve shared page, falling back to last-peeked page:', e);
+        }
+      }
+
+      // The actor only understands coarse 1-5 buckets, so the exact years
+      // typed in are mapped down to whichever bucket(s) cover that range —
+      // this just scopes the search reasonably. The precise number is what
+      // actually gets checked against each candidate after scraping, below.
+      const expMin = expMinYears !== '' ? parseInt(expMinYears, 10) : null;
+      const expMax = expMaxYears !== '' ? parseInt(expMaxYears, 10) : null;
+      const experienceIdsForQuery = (expMin != null || expMax != null) ? mapExperienceRange(expMin, expMax) : [];
 
       const searchInput = {
         searchQuery: finalQuery,
@@ -887,7 +1162,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
         // Use the actor's dedicated company field instead of poisoning the
         // keyword query with more AND clauses.
         ...(companies.length > 0 && { currentCompanies: companies.map(c => c.trim()) }),
-        ...(experience.length > 0 && { yearsOfExperienceIds: experience }),
+        ...(experienceIdsForQuery.length > 0 && { yearsOfExperienceIds: experienceIdsForQuery }),
         profileScraperMode: "Full",
         startPage: startPage,
         maxItems: maxItems
@@ -913,7 +1188,19 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
         body: JSON.stringify(searchInput)
       });
 
-      if (!runResponse.ok) throw new Error('Failed to run search process.');
+      if (!runResponse.ok) {
+        // Surface Apify's actual error instead of a generic message — this is
+        // the only way to tell "bad token" from "invalid input" from "out of
+        // credits" from "actor renamed," etc.
+        let detail = `HTTP ${runResponse.status}`;
+        try {
+          const errJson = await runResponse.json();
+          detail = errJson?.error?.message || errJson?.error?.type || JSON.stringify(errJson);
+        } catch {
+          try { detail = await runResponse.text() || detail; } catch { /* keep HTTP status */ }
+        }
+        throw new Error(`Failed to launch the Apify run: ${detail}`);
+      }
       const runJson = await runResponse.json();
       const runId = runJson.data.id;
       const datasetId = runJson.data.defaultDatasetId;
@@ -1011,7 +1298,14 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
             // harvestapi returns the badge as `openToWork`; keep the legacy
             // key populated with the real value.
             isOpenToWork: profile.openToWork ?? profile.isOpenToWork ?? false,
-            matchScore: computeMatchScore(profile, selectedSkills, optionalSkills, designation, location),
+            matchScore: computeMatchScore(profile, selectedSkills, optionalSkills, designation, location, prioritySkills),
+            // Real total experience, computed by summing this candidate's own
+            // position durations — not the actor's coarse bucket guess. Every
+            // scraped candidate is kept and tagged regardless of the result
+            // (same principle as Open-to-Work): filter to a range in the
+            // Candidate Database instead of discarding paid-for scrapes here.
+            computedExperienceYears: computeTotalExperienceYears(profile.positions || profile.experience || []),
+            experienceRequested: (expMin != null || expMax != null) ? { min: expMin, max: expMax } : null,
             status: 'sourced',
             assignedRecruiterEmail: currentUser?.email || 'dev@siliconpatterns.com',
             _searchedDesignation: designation.join(', '),
@@ -1054,7 +1348,7 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
               candidateName: `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Candidate',
               actionType: 'sourced',
               skills: skillArray
-            });
+            }, currentUser?.accessToken);
           }
         } catch (activityError) {
           console.error("Failed to log activity:", activityError);
@@ -1070,6 +1364,12 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
       };
       newUniqueProfiles.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a));
       setLatestRunResults(newUniqueProfiles);
+
+      // Replace (not merge with) the previous run's "New" set — only the
+      // candidates from THIS scrape are tagged New until the next one runs.
+      const newUrls = newUniqueProfiles.map(p => cleanUrl(p.linkedinUrl || p.url)).filter(Boolean);
+      try { localStorage.setItem('siliconPatternsLastRunUrls', JSON.stringify(newUrls)); } catch { /* non-fatal */ }
+      setNewCandidateUrls(new Set(newUrls));
 
       const updatedMaster = [...masterLeads, ...newUniqueProfiles];
       updatedMaster.sort((a, b) => getEffectiveScore(b) - getEffectiveScore(a));
@@ -1293,22 +1593,55 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
                 : 'Broad: candidates matching any selected skill are returned, ranked by relevance.'}
             </p>
 
-            {/* Selected skills as removable tags */}
+            {/* Selected skills as removable tags, with a star to mark priority */}
             {selectedSkills.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
-                {selectedSkills.map(skill => (
-                  <button key={skill} type="button" onClick={() => toggleSkill(skill)} style={{
-                    padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600',
-                    cursor: 'pointer', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: '4px',
-                    border: '1px solid var(--accent)', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)',
-                  }}>{skill} <span style={{ fontSize: '14px', lineHeight: 1 }}>×</span></button>
-                ))}
-                <button type="button" onClick={() => setSelectedSkills([])} style={{
-                  padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
-                  cursor: 'pointer', border: '1px solid rgba(248, 113, 113, 0.3)',
-                  backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171',
-                }}>Clear all</button>
-              </div>
+              <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                  {selectedSkills.map(skill => {
+                    const isPriority = prioritySkills.includes(skill);
+                    return (
+                      <span key={skill} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '2px',
+                        padding: '2px 4px 2px 8px', borderRadius: '20px', fontSize: '12px', fontWeight: '600',
+                        transition: 'all 0.15s',
+                        border: `1px solid ${isPriority ? '#eab308' : 'var(--accent)'}`,
+                        backgroundColor: isPriority ? 'rgba(234, 179, 8, 0.15)' : 'var(--accent)',
+                        color: isPriority ? '#eab308' : 'var(--accent-fg)',
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => togglePrioritySkill(skill)}
+                          title={isPriority ? 'Priority skill — click to unmark' : 'Mark as a priority skill (ranks higher)'}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px',
+                            color: isPriority ? '#eab308' : 'inherit', opacity: isPriority ? 1 : 0.6
+                          }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill={isPriority ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        </button>
+                        <button type="button" onClick={() => toggleSkill(skill)} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'transparent', border: 'none',
+                          cursor: 'pointer', color: 'inherit', fontSize: '12px', fontWeight: '600', padding: '2px 4px 2px 2px'
+                        }}>{skill} <span style={{ fontSize: '14px', lineHeight: 1 }}>×</span></button>
+                      </span>
+                    );
+                  })}
+                  <button type="button" onClick={() => { setSelectedSkills([]); setPrioritySkills([]); }} style={{
+                    padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '500',
+                    cursor: 'pointer', border: '1px solid rgba(248, 113, 113, 0.3)',
+                    backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#f87171',
+                  }}>Clear all</button>
+                </div>
+                {prioritySkills.length > 0 && (
+                  <p style={{ margin: '0 0 12px', fontSize: '11px', color: '#eab308' }}>
+                    ★ {prioritySkills.join(', ')} {prioritySkills.length === 1 ? 'is' : 'are'} weighted higher when ranking matches
+                    {skillMatchMode !== 'all' && prioritySkills.length < selectedSkills.length
+                      ? ` — and in Match any mode, every result is now required to have at least one starred skill.`
+                      : '.'}
+                  </p>
+                )}
+              </>
             )}
 
             <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
@@ -1399,14 +1732,26 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
               />
             </div>
             <div>
-              <label style={labelStyle}>Experience Bracket</label>
-              <TagSelect
-                options={experienceOptions}
-                selected={experience}
-                onChange={setExperience}
-                placeholder="Select experience levels"
-                allowCustom={false}
-              />
+              <label style={labelStyle}>Experience (Years)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="number" min="0" max="50" placeholder="Min"
+                  value={expMinYears}
+                  onChange={e => setExpMinYears(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  style={{ ...inputStyle, width: '90px' }}
+                />
+                <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>to</span>
+                <input
+                  type="number" min="0" max="50" placeholder="Max (blank = no cap)"
+                  value={expMaxYears}
+                  onChange={e => setExpMaxYears(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  style={{ ...inputStyle, width: '90px' }}
+                />
+                <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>years</span>
+              </div>
+              <p style={{ margin: '8px 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                Scopes the search, then is verified against each candidate's actual work history (summed from their listed roles) — never used to discard scraped candidates, only to tag and let you filter them in the Candidate Database.
+              </p>
             </div>
           </div>
 
@@ -1552,14 +1897,14 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
         {latestRunResults.length > 0 && (
           <div style={{ marginTop: '32px', paddingTop: '28px', borderTop: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '500', color: 'var(--text-primary)' }}>{latestRunResults.length} New Candidates Added</h3>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '500', color: 'var(--text-primary)' }}>{latestRunResults.length} New Candidates from This Scrape</h3>
               <button onClick={() => navigate('/candidates')} style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>
-                View All in Database →
+                Open Candidate Database →
               </button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {latestRunResults.slice(0, 5).map((p, idx) => (
-                <div key={idx} style={{ padding: '12px 16px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '520px', overflowY: 'auto', paddingRight: '4px' }}>
+              {latestRunResults.map((p, idx) => (
+                <div key={p.linkedinUrl || p.url || idx} style={{ padding: '12px 16px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{safeExtractText(p.firstName)} {safeExtractText(p.lastName)}</span>
                     <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>{safeExtractText(p.currentTitle || p.jobTitle || p.headline).substring(0, 60)}</p>
@@ -1571,6 +1916,16 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
                         padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', border: '1px solid rgba(16, 185, 129, 0.3)'
                       }}>Open to Work</span>
                     )}
+                    {p.computedExperienceYears !== '' && p.computedExperienceYears !== undefined && (() => {
+                      const inRange = isExperienceInRange(p);
+                      const color = inRange === false ? '#f59e0b' : (inRange === true ? '#10b981' : 'var(--text-secondary)');
+                      return (
+                        <span title={inRange === false ? 'Outside the requested experience range' : 'Total experience, summed from listed roles'} style={{
+                          backgroundColor: 'var(--bg-surface)', color, padding: '3px 8px', borderRadius: '4px',
+                          fontSize: '11px', fontWeight: '600', border: `1px solid ${color}55`
+                        }}>{p.computedExperienceYears}y exp</span>
+                      );
+                    })()}
                     {p.agentScore !== undefined && p.agentScore !== null ? (
                       <span style={{
                         backgroundColor: 'rgba(0, 229, 255, 0.15)',
@@ -1587,9 +1942,6 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
                   </div>
                 </div>
               ))}
-              {latestRunResults.length > 5 && (
-                <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>+{latestRunResults.length - 5} more in the Candidates page</p>
-              )}
             </div>
           </div>
         )}
@@ -1597,15 +1949,30 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
     </div>
   );
 }
+// App() renders <AuthProvider>, so it sits above the auth context and can't
+// call useAuth() itself. AuthContext already persists the verified session
+// (including its access token) to this localStorage key on every login/
+// refresh, so read it directly here for the handful of Supabase calls that
+// live in App() rather than in a component under the provider.
+function getStoredAccessToken() {
+  try {
+    const raw = localStorage.getItem('siliconPatternsActiveSession');
+    return raw ? JSON.parse(raw)?.accessToken : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function App() {
   const [masterLeads, setMasterLeads] = useState([]);
+  const masterLeadsRef = useRef([]);
 
   // Database Config State
   const [useSupabase, setUseSupabase] = useState(false);
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
   const [dbStatus, setDbStatus] = useState('local'); // 'local' | 'connecting' | 'connected' | 'error'
+  const [dbSyncError, setDbSyncError] = useState(null); // last Supabase sync failure message, or null
   const [showSettings, setShowSettings] = useState(false);
 
   // Theme State
@@ -1630,6 +1997,11 @@ export default function App() {
   const [inputGroqKey, setInputGroqKey] = useState('');
   const [showSqlHelp, setShowSqlHelp] = useState(false);
 
+  // Sync masterLeadsRef with state
+  useEffect(() => {
+    masterLeadsRef.current = masterLeads;
+  }, [masterLeads]);
+
   // Load configuration on mount
   useEffect(() => {
     const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -1650,55 +2022,102 @@ export default function App() {
     setInputApifyKey(localStorage.getItem('siliconPatternsApifyKey') || '');
     setInputGroqKey(localStorage.getItem('siliconPatternsGroqApiKey') || '');
 
+    // Always hydrate from the local mirror first, synchronously, so a page
+    // refresh shows last-known candidates instantly instead of a blank list
+    // while the network call is in flight — and so offline/misconfigured
+    // sessions still see their data instead of nothing.
+    try {
+      const stored = localStorage.getItem('siliconPatternsMasterDatabase');
+      if (stored) {
+        const data = JSON.parse(stored);
+        masterLeadsRef.current = data;
+        setMasterLeads(data);
+      }
+    } catch (err) {
+      console.error("Failed to load local database:", err);
+    }
+
     if (dbMode && dbUrl && dbKey) {
       setDbStatus('connecting');
       import('./supabase.js')
         .then(({ fetchCandidatesFromSupabase }) => {
-          return fetchCandidatesFromSupabase(dbUrl, dbKey);
+          return fetchCandidatesFromSupabase(dbUrl, dbKey, getStoredAccessToken());
         })
         .then(data => {
+          // Supabase succeeded — it's the source of truth, overwrite local.
+          masterLeadsRef.current = data;
           setMasterLeads(data);
           setDbStatus('connected');
+          try { localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(data)); } catch { /* non-fatal */ }
         })
         .catch(err => {
+          // Fetch failed — the local mirror loaded above is already showing,
+          // so this is a fallback state, not a blank screen.
           console.error("Failed to sync Supabase database on load:", err);
           setDbStatus('error');
+          setDbSyncError(err.message || 'Could not load the latest candidates from the shared database — showing last-known data from this device.');
         });
+    } else {
+      setDbStatus('local');
     }
+  }, []);
+
+  // Cross-tab awareness: the `storage` event only fires in OTHER tabs of the
+  // same origin (never the tab that made the write), so this is exactly the
+  // signal needed to warn "data changed elsewhere" without an infinite loop.
+  // Intentionally lightweight — just a dismissible nudge to refresh, not
+  // live state reconciliation between tabs.
+  const [tabUpdateNotice, setTabUpdateNotice] = useState(false);
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'siliconPatternsMasterDatabase') {
+        setTabUpdateNotice(true);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   // Intercept and synchronize all leads mutations (creates, updates, deletes)
   const syncMasterLeads = async (newLeads) => {
-    const resolvedLeads = typeof newLeads === 'function' ? newLeads(masterLeads) : newLeads;
-
+    const resolvedLeads = typeof newLeads === 'function' ? newLeads(masterLeadsRef.current) : newLeads;
+    masterLeadsRef.current = resolvedLeads;
     setMasterLeads(resolvedLeads);
 
-
+    try {
+      localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(resolvedLeads));
+    } catch (err) {
+      console.error("Failed to save candidates to local storage:", err);
+    }
 
     if (useSupabase && supabaseUrl && supabaseKey) {
       try {
         const { upsertCandidatesToSupabase, deleteCandidateFromSupabase } = await import('./supabase.js');
 
         // Handle deletion: find if any candidate was removed
-        if (resolvedLeads.length < masterLeads.length) {
+        if (resolvedLeads.length < masterLeadsRef.current.length) {
           const resolvedUrls = new Set(resolvedLeads.map(l => l.linkedinUrl || l.url));
-          const removedCandidates = masterLeads.filter(l => !resolvedUrls.has(l.linkedinUrl || l.url));
+          const removedCandidates = masterLeadsRef.current.filter(l => !resolvedUrls.has(l.linkedinUrl || l.url));
           for (const cand of removedCandidates) {
-            await deleteCandidateFromSupabase(supabaseUrl, supabaseKey, cand).catch(e => console.error(e));
+            await deleteCandidateFromSupabase(supabaseUrl, supabaseKey, cand, getStoredAccessToken()).catch(e => console.error(e));
           }
         }
 
         // Upsert active leads
         if (resolvedLeads.length > 0) {
-          await upsertCandidatesToSupabase(supabaseUrl, supabaseKey, resolvedLeads);
+          await upsertCandidatesToSupabase(supabaseUrl, supabaseKey, resolvedLeads, getStoredAccessToken());
         }
+        // A sync just succeeded — clear any earlier failure banner.
+        setDbSyncError(null);
       } catch (err) {
         console.error("Failed to sync updates to Supabase:", err);
         setDbStatus('error');
+        // Surface the real error instead of only logging it — this is the only
+        // way to tell "saved" from "looks saved but silently failed."
+        setDbSyncError(err.message || 'Unknown error while saving to the shared database.');
       }
     }
   };
-
   // Connect & migrate local storage to online shared database
   const handleConnectSupabase = async (e) => {
     e.preventDefault();
@@ -1718,7 +2137,7 @@ export default function App() {
         const { fetchCandidatesFromSupabase, upsertCandidatesToSupabase } = await import('./supabase.js');
 
         // 1. Fetch remote candidates
-        const remoteCandidates = await fetchCandidatesFromSupabase(inputUrl, inputKey);
+        const remoteCandidates = await fetchCandidatesFromSupabase(inputUrl, inputKey, getStoredAccessToken());
 
         // 2. Perform two-way merge
         const mergedMap = new Map();
@@ -1751,7 +2170,7 @@ export default function App() {
 
         // 3. Push complete dataset back to Supabase
         if (mergedLeads.length > 0) {
-          await upsertCandidatesToSupabase(inputUrl, inputKey, mergedLeads);
+          await upsertCandidatesToSupabase(inputUrl, inputKey, mergedLeads, getStoredAccessToken());
         }
 
         // 4. Update state and config
@@ -1793,12 +2212,24 @@ export default function App() {
   status text default 'sourced',
   agent_score integer,
   agent_reasoning text,
+  assigned_recruiter_email text,
   profile_data jsonb,
   created_at timestamptz default now()
 );
 
--- Disable row-level security so anyone can read/write without login
-alter table candidates disable row level security;`;
+-- Row-level security: only authenticated recruiters can read/write.
+-- See supabase-rls-setup.sql for the full policy set (also covers
+-- search_cursors, recruiter_activities, approved_emails, pending_users).
+alter table candidates enable row level security;
+
+create policy "Authenticated users can read candidates"
+  on candidates for select to authenticated using (true);
+create policy "Authenticated users can insert candidates"
+  on candidates for insert to authenticated with check (true);
+create policy "Authenticated users can update candidates"
+  on candidates for update to authenticated using (true);
+create policy "Authenticated users can delete candidates"
+  on candidates for delete to authenticated using (true);`;
 
   return (
     <AuthProvider>
@@ -1807,17 +2238,50 @@ alter table candidates disable row level security;`;
           <Route path="/*" element={
             <ProtectedRoute>
               <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-main)', fontFamily: 'var(--sans)', color: 'var(--text-primary)' }}>
+                {tabUpdateNotice && (
+                  <div style={{
+                    position: 'fixed', bottom: '20px', right: '20px', zIndex: 2000,
+                    display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
+                    backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)',
+                    borderRadius: '8px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)',
+                    fontSize: '13px', color: 'var(--text-primary)', maxWidth: '340px'
+                  }}>
+                    <span style={{ flex: 1 }}>Data was updated in another tab. Refresh to see the latest.</span>
+                    <button type="button" onClick={() => window.location.reload()} style={{
+                      background: 'var(--text-primary)', color: 'var(--bg-surface)', border: 'none',
+                      borderRadius: '5px', padding: '5px 10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', flexShrink: 0
+                    }}>Refresh</button>
+                    <button type="button" onClick={() => setTabUpdateNotice(false)} title="Dismiss" style={{
+                      background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '16px', lineHeight: 1, flexShrink: 0
+                    }}>×</button>
+                  </div>
+                )}
                 <Sidebar candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} theme={theme} toggleTheme={toggleTheme} />
 
                 <div style={{ flex: 1, overflowY: 'auto' }}>
+                  {dbSyncError && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 20px',
+                      backgroundColor: 'rgba(220, 38, 38, 0.12)', borderBottom: '1px solid rgba(248, 113, 113, 0.3)',
+                      color: '#f87171', fontSize: '13px'
+                    }}>
+                      <span style={{ flexShrink: 0 }}>⚠️</span>
+                      <span style={{ flex: 1 }}>
+                        Changes are saved on this device, but couldn't reach the shared database: <strong>{dbSyncError}</strong>
+                      </span>
+                      <button type="button" onClick={() => setDbSyncError(null)} title="Dismiss" style={{
+                        background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '16px', lineHeight: 1, flexShrink: 0
+                      }}>×</button>
+                    </div>
+                  )}
                   <Routes>
-                    <Route path="/" element={<Navigate to="/search" replace />} />
-                    <Route path="/search" element={<SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />} />
+                    <Route path="/" element={<DefaultLanding />} />
+                    <Route path="/search" element={<AdminRoute><SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} /></AdminRoute>} />
                     <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
                     <Route path="/agent" element={<AIAgentPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
                     <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />} />
                     <Route path="/analytics" element={<AnalyticsPage masterLeads={masterLeads} />} />
-                    <Route path="/admin" element={<AdminPage masterLeads={masterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />} />
+                    <Route path="/admin" element={<AdminRoute><AdminPage masterLeads={masterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} /></AdminRoute>} />
                   </Routes>
                 </div>
 
