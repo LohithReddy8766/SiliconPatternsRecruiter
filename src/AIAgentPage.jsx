@@ -3,9 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { runCandidateAgent } from './agent.js';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
 import { extractSkillsList, matchSkillFlexible, computeTotalExperienceYears, safeExtractText } from './CandidatesPage.jsx';
+import { getFilteredLeadsForRecruiter } from './recruiterFilter.js';
 import { isCandidateOpenToWork } from './App.jsx';
+import { useAuth } from './AuthContext';
 
 export default function AIAgentPage({ masterLeads, setMasterLeads }) {
+  const { currentUser } = useAuth();
+  const recruiterLeads = useMemo(() => getFilteredLeadsForRecruiter(masterLeads, currentUser), [masterLeads, currentUser]);
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState('setup');
   // Config state
@@ -34,26 +38,26 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
   // Distinct first-token locations across the pool, for the location dropdown.
   const uniqueLocations = useMemo(() => {
     const locs = new Set();
-    masterLeads.forEach(p => {
+    recruiterLeads.forEach(p => {
       const loc = safeExtractText(p.location).split(',')[0].trim();
       if (loc && loc !== 'N/A') locs.add(loc);
     });
     return [...locs].sort();
-  }, [masterLeads]);
+  }, [recruiterLeads]);
 
   // The actual targets to be evaluated when running
   const evaluationTargets = useMemo(() => {
-    return masterLeads
-      .map((candidate, idx) => ({ candidate, idx }))
+    return recruiterLeads
+      .map((candidate, idx) => ({ candidate, idx: masterLeads.indexOf(candidate) }))
       .filter(item => {
         const url = item.candidate.linkedinUrl || item.candidate.url || `candidate-${item.idx}`;
         return selectedUrls.has(url);
       });
-  }, [masterLeads, selectedUrls]);
+  }, [masterLeads, recruiterLeads, selectedUrls]);
 
   // Compute the list of candidates matching the filters to show in the selector UI
   const filteredSelectionList = useMemo(() => {
-    let results = [...masterLeads];
+    let results = [...recruiterLeads];
     
     // 1. Filter by targetSkills first (if targetSkills are specified)
     if (targetSkills.length > 0) {
@@ -356,6 +360,10 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
   };
 
   const downloadLeaderboardCSV = () => {
+    if (currentUser?.role !== 'admin') {
+      alert('Only administrators can export the leaderboard to CSV.');
+      return;
+    }
     const evaluatedCandidates = masterLeads.map((candidate, idx) => {
       const candUrl = candidate.linkedinUrl || candidate.url || `candidate-${idx}`;
       return { candidate, result: agentResults[candUrl] };
@@ -444,16 +452,18 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
         
         {Object.keys(agentResults).length > 0 && (
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
-              onClick={downloadLeaderboardCSV} 
-              title="Export Leaderboard CSV"
-              style={{ 
-                padding: '10px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', 
-                borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px'
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            </button>
+            {currentUser?.role === 'admin' && (
+              <button 
+                onClick={downloadLeaderboardCSV} 
+                title="Export Leaderboard CSV"
+                style={{ 
+                  padding: '10px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', 
+                  borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px'
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              </button>
+            )}
             <button 
               onClick={handleCommitToDatabase} 
               title="Commit Scores to Database"
@@ -911,11 +921,12 @@ export default function AIAgentPage({ masterLeads, setMasterLeads }) {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
                   {(() => {
-                    const resultEntries = masterLeads.map((candidate, idx) => {
-                      const candUrl = candidate.linkedinUrl || candidate.url || `candidate-${idx}`;
+                    const resultEntries = recruiterLeads.map((candidate) => {
+                      const candIdx = masterLeads.indexOf(candidate);
+                      const candUrl = candidate.linkedinUrl || candidate.url || `candidate-${candIdx}`;
                       const result = agentResults[candUrl];
                       if (!result) return null;
-                      return { candidate, idx, result };
+                      return { candidate, idx: candIdx, result };
                     }).filter(Boolean).sort((a, b) => b.result.score - a.result.score);
 
                     const resultsTotalPages = Math.max(1, Math.ceil(resultEntries.length / RESULTS_PAGE_SIZE));

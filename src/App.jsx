@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './AuthContext';
 import LoginPage from './LoginPage';
 import AdminPage from './AdminPage';
 import CandidatesPage, { computeTotalExperienceYears } from './CandidatesPage.jsx';
+import { getFilteredLeadsForRecruiter } from './recruiterFilter.js';
 import AIAgentPage from './AIAgentPage.jsx';
 import PipelinePage from './PipelinePage.jsx';
 import AnalyticsPage from './AnalyticsPage.jsx';
@@ -665,10 +666,12 @@ function TagSelect({ options, selected, onChange, placeholder, allowCustom = tru
   );
 }
 
-function Sidebar({ candidateCount, dbStatus, onOpenSettings, theme, toggleTheme }) {
+function Sidebar({ masterLeads, dbStatus, onOpenSettings, theme, toggleTheme }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, logout } = useAuth();
+  const filteredLeads = getFilteredLeadsForRecruiter(masterLeads || [], currentUser);
+  const candidateCount = filteredLeads.length;
   const isSearch = location.pathname === '/' || location.pathname === '/search';
   const isCandidates = location.pathname === '/candidates';
 
@@ -2256,7 +2259,7 @@ create policy "Authenticated users can delete candidates"
                     }}>×</button>
                   </div>
                 )}
-                <Sidebar candidateCount={masterLeads.length} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} theme={theme} toggleTheme={toggleTheme} />
+                <Sidebar masterLeads={masterLeads} dbStatus={dbStatus} onOpenSettings={() => setShowSettings(true)} theme={theme} toggleTheme={toggleTheme} />
 
                 <div style={{ flex: 1, overflowY: 'auto' }}>
                   {dbSyncError && (
