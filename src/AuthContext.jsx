@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 const AuthContext = createContext();
 
@@ -24,11 +25,7 @@ function resolveRole(email, userData) {
 export const isAdminEmail = (email) => ADMIN_EMAILS.has((email || '').toLowerCase().trim());
 
 function getSupabaseConfig() {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-  const url = (localStorage.getItem('siliconPatternsSupabaseUrl') || envUrl).trim().replace(/\/$/, '');
-  const key = (localStorage.getItem('siliconPatternsSupabaseKey') || envKey).trim();
-  return { url, key };
+  return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY };
 }
 
 function buildSessionUser(userData, accessToken, refreshToken) {

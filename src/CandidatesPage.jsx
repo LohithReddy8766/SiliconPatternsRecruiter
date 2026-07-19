@@ -2,6 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
 import { isCandidateOpenToWork, isNewCandidate, jdContainsTerm } from './App.jsx';
+import { useAuth } from './AuthContext';
+import { getFilteredLeadsForRecruiter } from './recruiterFilter.js';
 
 const STAGE_BADGES = {
   sourced: { label: 'Sourced', bg: 'var(--bg-surface)', text: 'var(--text-secondary)', border: 'var(--border-color)' },
@@ -765,9 +767,11 @@ Generate the JSON outreach sequence now.`
   );
 }
 
+
 const ITEMS_PER_PAGE = 20;
 
 export default function CandidatesPage({ masterLeads, setMasterLeads }) {
+  const { currentUser } = useAuth();
   const location = useLocation();
   const highlightedUrl = location.state?.highlightCandidateUrl || '';
 
@@ -828,13 +832,11 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
     setMasterLeads(updated);
   };
 
-  const clearAll = () => {
-    if (window.confirm('Delete ALL candidates from the Master Database? This cannot be undone.')) {
-      setMasterLeads([]);
-    }
-  };
-
   const downloadCSV = () => {
+    if (currentUser?.role !== 'admin') {
+      alert('Only administrators can export candidates to CSV.');
+      return;
+    }
     if (filteredCandidates.length === 0) return;
     // Respect the requested export count (blank / <=0 = all).
     const n = parseInt(exportCount, 10);
@@ -907,19 +909,21 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
     document.body.removeChild(link);
   };
 
+  const recruiterLeads = useMemo(() => getFilteredLeadsForRecruiter(masterLeads, currentUser), [masterLeads, currentUser]);
+
   // Unique locations for filter dropdown
   const uniqueLocations = useMemo(() => {
     const locs = new Set();
-    masterLeads.forEach(p => {
+    recruiterLeads.forEach(p => {
       const loc = safeExtractText(p.location).split(',')[0].trim();
       if (loc && loc !== 'N/A') locs.add(loc);
     });
     return Array.from(locs).sort();
-  }, [masterLeads]);
+  }, [recruiterLeads]);
 
   // Filtered + sorted candidates
   const filteredCandidates = useMemo(() => {
-    let results = [...masterLeads];
+    let results = [...recruiterLeads];
 
     // Text search — matches the query anywhere on the profile: name, current
     // title, headline, skills, topSkills, about, location, AND the full work
@@ -998,7 +1002,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
     }
 
     return results;
-  }, [masterLeads, searchText, filterSkills, skillFilterMode, filterLocation, filterOpenToWork, filterExpMin, filterExpMax, sortBy]);
+  }, [recruiterLeads, searchText, filterSkills, skillFilterMode, filterLocation, filterOpenToWork, filterExpMin, filterExpMax, sortBy]);
 
   // Pagination logic
   const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / ITEMS_PER_PAGE));
@@ -1034,7 +1038,7 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
     fontFamily: 'inherit', backgroundColor: 'var(--bg-main)',
   };
 
-  if (masterLeads.length === 0) {
+  if (recruiterLeads.length === 0) {
     return (
       <div style={{ padding: '80px 20px', textAlign: 'center' }}>
         <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)' }}>No candidates yet</h2>
@@ -1053,27 +1057,28 @@ export default function CandidatesPage({ masterLeads, setMasterLeads }) {
             Candidate Database
           </h1>
           <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
-            {filteredCandidates.length} of {masterLeads.length} candidates
+            {filteredCandidates.length} of {recruiterLeads.length} candidates
             {hasActiveFilters && <span style={{ color: 'var(--accent)', fontWeight: '600' }}> · Filters active</span>}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <input
-            type="number"
-            min="1"
-            value={exportCount}
-            onChange={e => setExportCount(e.target.value)}
-            placeholder={`All (${filteredCandidates.length})`}
-            title="How many candidates to include in the CSV (leave blank for all). Exports the top N in the current sort order."
-            style={{ width: '110px', padding: '7px 10px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none', fontFamily: 'inherit' }}
-          />
-          <button onClick={downloadCSV} title="Export CSV" style={{ padding: '8px 12px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '32px', fontSize: '13px', fontWeight: '600' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            CSV
-          </button>
-          <button onClick={clearAll} title="Clear All Candidates" style={{ padding: '8px', backgroundColor: 'var(--bg-surface)', color: '#ef4444', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-          </button>
+          {currentUser?.role === 'admin' && (
+            <>
+              <input
+                type="number"
+                min="1"
+                value={exportCount}
+                onChange={e => setExportCount(e.target.value)}
+                placeholder={`All (${filteredCandidates.length})`}
+                title="How many candidates to include in the CSV (leave blank for all). Exports the top N in the current sort order."
+                style={{ width: '110px', padding: '7px 10px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none', fontFamily: 'inherit' }}
+              />
+              <button onClick={downloadCSV} title="Export CSV" style={{ padding: '8px 12px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '32px', fontSize: '13px', fontWeight: '600' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                CSV
+              </button>
+            </>
+          )}
         </div>
       </div>
 

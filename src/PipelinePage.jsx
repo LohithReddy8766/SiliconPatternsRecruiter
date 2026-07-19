@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { downloadCandidateResume } from './CandidatesPage.jsx';
+import { getFilteredLeadsForRecruiter } from './recruiterFilter.js';
 import { useAuth } from './AuthContext';
 
 const PIPELINE_STAGES = [
@@ -15,6 +16,7 @@ const PIPELINE_STAGES = [
 export default function PipelinePage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const recruiterLeads = useMemo(() => getFilteredLeadsForRecruiter(masterLeads, currentUser), [masterLeads, currentUser]);
   const [viewingReasoning, setViewingReasoning] = useState(null);
   const [pipelineSearch, setPipelineSearch] = useState('');
 
@@ -44,10 +46,10 @@ export default function PipelinePage({ masterLeads, setMasterLeads, supabaseUrl,
     setMasterLeads(updatedLeads);
     localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(updatedLeads));
 
-    // Log stage change activity if online
-    const dbUrl = supabaseUrl || localStorage.getItem('siliconPatternsSupabaseUrl');
-    const dbKey = supabaseKey || localStorage.getItem('siliconPatternsSupabaseKey');
-    if (dbUrl && dbKey) {
+    // Log stage change activity
+    {
+      const dbUrl = supabaseUrl;
+      const dbKey = supabaseKey;
       import('./supabase.js').then(({ logRecruiterActivity }) => {
         let skillArray = [];
         if (candidate.skills) {
@@ -113,14 +115,14 @@ export default function PipelinePage({ masterLeads, setMasterLeads, supabaseUrl,
 
   // Filter candidates by search query
   const filteredLeads = useMemo(() => {
-    if (!pipelineSearch.trim()) return masterLeads;
+    if (!pipelineSearch.trim()) return recruiterLeads;
     const q = pipelineSearch.toLowerCase();
-    return masterLeads.filter(c => {
+    return recruiterLeads.filter(c => {
       const name = `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase();
       const title = (c.currentTitle || c.jobTitle || c.headline || '').toLowerCase();
       return name.includes(q) || title.includes(q);
     });
-  }, [masterLeads, pipelineSearch]);
+  }, [recruiterLeads, pipelineSearch]);
 
   // Group candidates by their current stage
   const groupedCandidates = PIPELINE_STAGES.reduce((groups, stage) => {
@@ -128,7 +130,7 @@ export default function PipelinePage({ masterLeads, setMasterLeads, supabaseUrl,
     return groups;
   }, {});
 
-  if (masterLeads.length === 0) {
+  if (recruiterLeads.length === 0) {
     return (
       <div style={{ padding: '80px 20px', textAlign: 'center' }}>
         <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)' }}>Empty Pipeline</h2>

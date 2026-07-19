@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { downloadCandidateResume } from './CandidatesPage.jsx';
+import { ASIC_SKILLS_CATEGORIZED } from './skills.js';
 
 export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }) {
   const { currentUser } = useAuth();
@@ -18,6 +19,114 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
 
   const [pendingUsers, setPendingUsers] = useState([]);
   const [loadingPending, setLoadingPending] = useState(false);
+
+  const [selectedEmail, setSelectedEmail] = useState('');
+  const [allRecruiterSettings, setAllRecruiterSettings] = useState({});
+  const [settings, setSettings] = useState({
+    categories: [],
+    skills: [],
+    experienceMin: '',
+    experienceMax: ''
+  });
+  const [expandedCategory, setExpandedCategory] = useState(null);
+
+  // Load all settings from localstorage on mount/tab change
+  useEffect(() => {
+    const raw = localStorage.getItem('siliconPatternsRecruiterSettings');
+    if (raw) {
+      try {
+        setAllRecruiterSettings(JSON.parse(raw));
+      } catch (e) {
+        console.error("Failed to parse recruiter settings:", e);
+      }
+    }
+  }, [activeTab]);
+
+  // Load active settings when selected email changes
+  useEffect(() => {
+    if (selectedEmail) {
+      const userSettings = allRecruiterSettings[selectedEmail.toLowerCase().trim()] || {
+        categories: [],
+        skills: [],
+        experienceMin: '',
+        experienceMax: ''
+      };
+      setSettings({
+        categories: userSettings.categories || [],
+        skills: userSettings.skills || [],
+        experienceMin: userSettings.experienceMin !== undefined ? userSettings.experienceMin : '',
+        experienceMax: userSettings.experienceMax !== undefined ? userSettings.experienceMax : ''
+      });
+    }
+  }, [selectedEmail, allRecruiterSettings]);
+
+  // Extract all unique skills found in database candidates
+  const uniqueFoundSkills = React.useMemo(() => {
+    const uniqueSkills = new Set();
+    masterLeads.forEach(cand => {
+      if (cand.skills) {
+        let skillArray = [];
+        if (Array.isArray(cand.skills)) {
+          skillArray = cand.skills.map(s => typeof s === 'string' ? s : (s.name || s.title || '')).filter(Boolean);
+        } else {
+          skillArray = String(cand.skills).split(/[\r\n,;]+/).map(s => s.trim()).filter(Boolean);
+        }
+        skillArray.forEach(sk => {
+          if (sk) {
+            uniqueSkills.add(sk.trim());
+          }
+        });
+      }
+    });
+    return Array.from(uniqueSkills).sort((a, b) => a.localeCompare(b));
+  }, [masterLeads]);
+
+  const handleToggleCategory = (category, checked) => {
+    setSettings(prev => {
+      let nextCategories = [...prev.categories];
+      if (checked) {
+        if (!nextCategories.includes(category)) {
+          nextCategories.push(category);
+        }
+      } else {
+        nextCategories = nextCategories.filter(c => c !== category);
+      }
+      return { ...prev, categories: nextCategories };
+    });
+  };
+
+  const handleToggleSkill = (skill, checked) => {
+    setSettings(prev => {
+      let nextSkills = [...prev.skills];
+      if (checked) {
+        if (!nextSkills.includes(skill)) {
+          nextSkills.push(skill);
+        }
+      } else {
+        nextSkills = nextSkills.filter(s => s !== skill);
+      }
+      return { ...prev, skills: nextSkills };
+    });
+  };
+
+  const updateSetting = (key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveSettings = () => {
+    if (!selectedEmail) {
+      alert('Please select a recruiter profile first.');
+      return;
+    }
+    const emailKey = selectedEmail.toLowerCase().trim();
+    const updatedAll = {
+      ...allRecruiterSettings,
+      [emailKey]: settings
+    };
+    setAllRecruiterSettings(updatedAll);
+    localStorage.setItem('siliconPatternsRecruiterSettings', JSON.stringify(updatedAll));
+    alert(`View settings for ${selectedEmail} saved successfully!`);
+  };
 
   // Guard (Admin only)
   if (!currentUser || currentUser.role !== 'admin') {
@@ -211,6 +320,21 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
     return Object.values(stats);
   }, [masterLeads]);
 
+  // Populate recruiter emails list for selection dropdown
+  const recruiterEmailsList = React.useMemo(() => {
+    const list = new Set();
+    approvedEmails.forEach(e => {
+      if (e.email) list.add(e.email.toLowerCase().trim());
+    });
+    recruiterStats.forEach(r => {
+      if (r.email) list.add(r.email.toLowerCase().trim());
+    });
+    list.add('adminsiliconpatterns@siliconpatterns.com');
+    list.add('dev@siliconpatterns.com');
+    list.add('ai@siliconpatterns.com');
+    return Array.from(list).sort();
+  }, [approvedEmails, recruiterStats]);
+
   // Clean transition naming for timeline activity
   const formatActionDescription = (act) => {
     switch (act.actionType) {
@@ -265,6 +389,17 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
           }}
         >
           Access Management
+        </button>
+        <button
+          onClick={() => setActiveTab('recruiterSettings')}
+          style={{
+            border: 'none', background: 'none', padding: '12px 16px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+            color: activeTab === 'recruiterSettings' ? 'var(--accent)' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'recruiterSettings' ? '2.5px solid var(--accent)' : '2.5px solid transparent',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          Recruiter View Controls
         </button>
       </div>
 
@@ -549,6 +684,219 @@ export default function AdminPage({ masterLeads = [], supabaseUrl, supabaseKey }
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'recruiterSettings' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px' }}>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', textAlign: 'left' }}>
+              Recruiter View Controls
+            </h3>
+            <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'left' }}>
+              Configure what candidate profiles specific recruiters are allowed to view and evaluate in the Talent Pool, Pipeline, and AI Evaluation Screener.
+            </p>
+            
+            {/* Dropdown to Select Recruiter */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '360px', marginBottom: '24px', textAlign: 'left' }}>
+              <label style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Select Recruiter Profile</label>
+              <select 
+                value={selectedEmail} 
+                onChange={e => setSelectedEmail(e.target.value)} 
+                style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none', fontSize: '14px', fontFamily: 'inherit' }}
+              >
+                <option value="">-- Choose a Recruiter --</option>
+                {recruiterEmailsList.map(email => (
+                  <option key={email} value={email}>{email}</option>
+                ))}
+              </select>
+            </div>
+
+            {selectedEmail ? (
+              <>
+                {/* Experience Range Control */}
+                <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '24px', marginBottom: '24px' }}>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', textAlign: 'left' }}>
+                    Allowed Experience (Years) for {selectedEmail}
+                  </h4>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '150px' }}>
+                      <label style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'left' }}>Min Years</label>
+                      <input 
+                        type="number" 
+                        min="0" 
+                        step="0.5"
+                        value={settings.experienceMin}
+                        onChange={e => updateSetting('experienceMin', e.target.value)}
+                        placeholder="0 (No limit)"
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '150px' }}>
+                      <label style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'left' }}>Max Years</label>
+                      <input 
+                        type="number" 
+                        min="0" 
+                        step="0.5"
+                        value={settings.experienceMax}
+                        onChange={e => updateSetting('experienceMax', e.target.value)}
+                        placeholder="25+ (No limit)"
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', outline: 'none' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Category & Skills Selector */}
+                <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '24px', marginBottom: '24px' }}>
+                  <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', textAlign: 'left' }}>
+                    Allowed Technical Skills & Categories
+                  </h4>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                    Recruiters will only see candidates who have at least one allowed skill or belong to an allowed category. If nothing is selected, all categories and skills are visible by default.
+                  </p>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {Object.entries(ASIC_SKILLS_CATEGORIZED).map(([category, skills]) => {
+                      const isCategoryChecked = settings.categories.includes(category);
+                      const isExpanded = expandedCategory === category;
+                      
+                      return (
+                        <div key={category} style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--bg-main)' }}>
+                          {/* Category Header */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: 'var(--bg-surface)' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                              <input 
+                                type="checkbox"
+                                checked={isCategoryChecked}
+                                onChange={e => handleToggleCategory(category, e.target.checked)}
+                                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                              />
+                              {category}
+                            </label>
+                            
+                            <button 
+                              onClick={() => setExpandedCategory(isExpanded ? null : category)}
+                              style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              {isExpanded ? 'Hide Skills ▲' : 'Show Skills (Group) ▼'}
+                            </button>
+                          </div>
+                          
+                          {/* Category Skills Grid */}
+                          {isExpanded && (
+                            <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}>
+                              {skills.map(skill => {
+                                const isSkillChecked = settings.skills.includes(skill);
+                                return (
+                                  <label key={skill} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', textAlign: 'left' }}>
+                                    <input 
+                                      type="checkbox"
+                                      checked={isSkillChecked}
+                                      disabled={isCategoryChecked} // If the whole category is allowed, individual skills are implicitly allowed
+                                      onChange={e => handleToggleSkill(skill, e.target.checked)}
+                                      style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                                    />
+                                    {skill}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Found Skills Selector */}
+                <div>
+                  <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', textAlign: 'left' }}>
+                    Skills Found in Candidate Profiles
+                  </h4>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                    Select from skills that have been extracted from uploaded resumes and candidate profiles in the database.
+                  </p>
+                  
+                  {uniqueFoundSkills.length === 0 ? (
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic', textAlign: 'left' }}>
+                      No candidate profiles loaded yet. Add candidate profiles to see extracted skills.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-start' }}>
+                        <button 
+                          onClick={() => {
+                            setSettings(prev => {
+                              const nextSkills = Array.from(new Set([...prev.skills, ...uniqueFoundSkills]));
+                              return { ...prev, skills: nextSkills };
+                            });
+                          }}
+                          style={{ padding: '6px 12px', fontSize: '11px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: '600' }}
+                        >
+                          Select All Found Skills
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setSettings(prev => {
+                              const nextSkills = prev.skills.filter(s => !uniqueFoundSkills.includes(s));
+                              return { ...prev, skills: nextSkills };
+                            });
+                          }}
+                          style={{ padding: '6px 12px', fontSize: '11px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: '600' }}
+                        >
+                          Deselect All Found Skills
+                        </button>
+                      </div>
+                      
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', 
+                        gap: '10px', 
+                        maxHeight: '200px', 
+                        overflowY: 'auto', 
+                        padding: '12px', 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: '8px', 
+                        backgroundColor: 'var(--bg-main)' 
+                      }}>
+                        {uniqueFoundSkills.map(skill => {
+                          const isSkillChecked = settings.skills.includes(skill);
+                          return (
+                            <label key={skill} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', textAlign: 'left' }}>
+                              <input 
+                                type="checkbox"
+                                checked={isSkillChecked}
+                                onChange={e => handleToggleSkill(skill, e.target.checked)}
+                                style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                              />
+                              {skill}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Save Button */}
+                <div style={{ marginTop: '24px', borderTop: '1px solid var(--border-color)', paddingTop: '24px', display: 'flex', justifyContent: 'flex-start' }}>
+                  <button 
+                    onClick={handleSaveSettings}
+                    style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Save Recruiter Settings
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: '40px 20px', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
+                <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)' }}>
+                  Please select a recruiter profile from the dropdown above to view and configure their access permissions.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
