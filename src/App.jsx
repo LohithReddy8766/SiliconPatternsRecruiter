@@ -9,6 +9,7 @@ import AIAgentPage from './AIAgentPage.jsx';
 import PipelinePage from './PipelinePage.jsx';
 import AnalyticsPage from './AnalyticsPage.jsx';
 import { ASIC_SKILLS, ASIC_SKILLS_CATEGORIZED } from './skills.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import logo from './assets/logo.png';
 
 const ProtectedRoute = ({ children }) => {
@@ -33,6 +34,21 @@ const AdminRoute = ({ children }) => {
 const DefaultLanding = () => {
   const { currentUser } = useAuth();
   return <Navigate to={currentUser?.role === 'admin' ? '/search' : '/candidates'} replace />;
+};
+
+// Fires onReady exactly once, the moment a verified session first appears —
+// covers both a fresh login and reloading with an already-valid session.
+// Lives inside AuthProvider (unlike App() itself) so it can see currentUser.
+const AuthSyncTrigger = ({ onReady }) => {
+  const { currentUser } = useAuth();
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (currentUser && !firedRef.current) {
+      firedRef.current = true;
+      onReady();
+    }
+  }, [currentUser, onReady]);
+  return null;
 };
 
 const DEFAULT_APIFY_TOKEN = import.meta.env.VITE_APIFY_API_TOKEN || '';
@@ -1327,10 +1343,10 @@ function SearchPage({ masterLeads, setMasterLeads, supabaseUrl, supabaseKey }) {
         return;
       }
 
-      // Log sourcing activities to Supabase if connected
-      const dbUrl = supabaseUrl || localStorage.getItem('siliconPatternsSupabaseUrl');
-      const dbKey = supabaseKey || localStorage.getItem('siliconPatternsSupabaseKey');
-      if (dbUrl && dbKey) {
+      // Log sourcing activities to Supabase
+      {
+        const dbUrl = SUPABASE_URL;
+        const dbKey = SUPABASE_ANON_KEY;
         try {
           const { logRecruiterActivity } = await import('./supabase.js');
           const recruiterEmail = currentUser?.email || 'dev@siliconpatterns.com';
@@ -1970,11 +1986,9 @@ export default function App() {
   const [masterLeads, setMasterLeads] = useState([]);
   const masterLeadsRef = useRef([]);
 
-  // Database Config State
-  const [useSupabase, setUseSupabase] = useState(false);
-  const [supabaseUrl, setSupabaseUrl] = useState('');
-  const [supabaseKey, setSupabaseKey] = useState('');
-  const [dbStatus, setDbStatus] = useState('local'); // 'local' | 'connecting' | 'connected' | 'error'
+  // Database connection is fixed (SUPABASE_URL/SUPABASE_ANON_KEY in config.js),
+  // not user-configurable — there is no local-only mode.
+  const [dbStatus, setDbStatus] = useState('connecting'); // 'connecting' | 'connected' | 'error'
   const [dbSyncError, setDbSyncError] = useState(null); // last Supabase sync failure message, or null
   const [showSettings, setShowSettings] = useState(false);
 
@@ -1992,13 +2006,9 @@ export default function App() {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
 
-  // Settings Inputs
-  const [inputUrl, setInputUrl] = useState('');
-  const [inputKey, setInputKey] = useState('');
-  const [inputUseSupabase, setInputUseSupabase] = useState(false);
+  // Settings Inputs — only Apify/Groq keys are user-configurable
   const [inputApifyKey, setInputApifyKey] = useState('');
   const [inputGroqKey, setInputGroqKey] = useState('');
-  const [showSqlHelp, setShowSqlHelp] = useState(false);
 
   // Sync masterLeadsRef with state
   useEffect(() => {
@@ -2007,28 +2017,13 @@ export default function App() {
 
   // Load configuration on mount
   useEffect(() => {
-    const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-    const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-    const dbModeStored = localStorage.getItem('siliconPatternsDbMode');
-
-    const dbUrl = localStorage.getItem('siliconPatternsSupabaseUrl') || envUrl;
-    const dbKey = localStorage.getItem('siliconPatternsSupabaseKey') || envKey;
-    const dbMode = (envUrl && envKey) || (dbUrl && dbKey && dbModeStored !== 'local');
-
-    setUseSupabase(!!dbMode);
-    setSupabaseUrl(dbUrl);
-    setSupabaseKey(dbKey);
-
-    setInputUseSupabase(!!dbMode);
-    setInputUrl(dbUrl);
-    setInputKey(dbKey);
     setInputApifyKey(localStorage.getItem('siliconPatternsApifyKey') || '');
     setInputGroqKey(localStorage.getItem('siliconPatternsGroqApiKey') || '');
 
     // Always hydrate from the local mirror first, synchronously, so a page
     // refresh shows last-known candidates instantly instead of a blank list
-    // while the network call is in flight — and so offline/misconfigured
-    // sessions still see their data instead of nothing.
+    // while the network call is in flight — and so a temporary fetch failure
+    // still shows data instead of nothing.
     try {
       const stored = localStorage.getItem('siliconPatternsMasterDatabase');
       if (stored) {
@@ -2039,31 +2034,36 @@ export default function App() {
     } catch (err) {
       console.error("Failed to load local database:", err);
     }
-
-    if (dbMode && dbUrl && dbKey) {
-      setDbStatus('connecting');
-      import('./supabase.js')
-        .then(({ fetchCandidatesFromSupabase }) => {
-          return fetchCandidatesFromSupabase(dbUrl, dbKey, getStoredAccessToken());
-        })
-        .then(data => {
-          // Supabase succeeded — it's the source of truth, overwrite local.
-          masterLeadsRef.current = data;
-          setMasterLeads(data);
-          setDbStatus('connected');
-          try { localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(data)); } catch { /* non-fatal */ }
-        })
-        .catch(err => {
-          // Fetch failed — the local mirror loaded above is already showing,
-          // so this is a fallback state, not a blank screen.
-          console.error("Failed to sync Supabase database on load:", err);
-          setDbStatus('error');
-          setDbSyncError(err.message || 'Could not load the latest candidates from the shared database — showing last-known data from this device.');
-        });
-    } else {
-      setDbStatus('local');
-    }
+    // The actual Supabase fetch is deferred to AuthSyncTrigger, which fires
+    // once a verified session exists (fresh login or an already-valid one on
+    // reload). Fetching here unconditionally would run before login with no
+    // access token, get an RLS-filtered near-empty result back, and — since
+    // a successful fetch is treated as the source of truth — silently
+    // overwrite the real local cache with that empty result.
   }, []);
+
+  // Fetches candidates from Supabase and makes them the source of truth.
+  // Called once a verified session exists (see AuthSyncTrigger below).
+  const fetchAndSyncCandidates = () => {
+    setDbStatus('connecting');
+    import('./supabase.js')
+      .then(({ fetchCandidatesFromSupabase }) => {
+        return fetchCandidatesFromSupabase(SUPABASE_URL, SUPABASE_ANON_KEY, getStoredAccessToken());
+      })
+      .then(data => {
+        masterLeadsRef.current = data;
+        setMasterLeads(data);
+        setDbStatus('connected');
+        try { localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(data)); } catch { /* non-fatal */ }
+      })
+      .catch(err => {
+        // Fetch failed — the local mirror loaded above is already showing,
+        // so this is a fallback state, not a blank screen.
+        console.error("Failed to sync Supabase database on load:", err);
+        setDbStatus('error');
+        setDbSyncError(err.message || 'Could not load the latest candidates from the shared database — showing last-known data from this device.');
+      });
+  };
 
   // Cross-tab awareness: the `storage` event only fires in OTHER tabs of the
   // same origin (never the tab that made the write), so this is exactly the
@@ -2093,149 +2093,44 @@ export default function App() {
       console.error("Failed to save candidates to local storage:", err);
     }
 
-    if (useSupabase && supabaseUrl && supabaseKey) {
-      try {
-        const { upsertCandidatesToSupabase, deleteCandidateFromSupabase } = await import('./supabase.js');
+    try {
+      const { upsertCandidatesToSupabase, deleteCandidateFromSupabase } = await import('./supabase.js');
 
-        // Handle deletion: find if any candidate was removed
-        if (resolvedLeads.length < masterLeadsRef.current.length) {
-          const resolvedUrls = new Set(resolvedLeads.map(l => l.linkedinUrl || l.url));
-          const removedCandidates = masterLeadsRef.current.filter(l => !resolvedUrls.has(l.linkedinUrl || l.url));
-          for (const cand of removedCandidates) {
-            await deleteCandidateFromSupabase(supabaseUrl, supabaseKey, cand, getStoredAccessToken()).catch(e => console.error(e));
-          }
+      // Handle deletion: find if any candidate was removed
+      if (resolvedLeads.length < masterLeadsRef.current.length) {
+        const resolvedUrls = new Set(resolvedLeads.map(l => l.linkedinUrl || l.url));
+        const removedCandidates = masterLeadsRef.current.filter(l => !resolvedUrls.has(l.linkedinUrl || l.url));
+        for (const cand of removedCandidates) {
+          await deleteCandidateFromSupabase(SUPABASE_URL, SUPABASE_ANON_KEY, cand, getStoredAccessToken()).catch(e => console.error(e));
         }
-
-        // Upsert active leads
-        if (resolvedLeads.length > 0) {
-          await upsertCandidatesToSupabase(supabaseUrl, supabaseKey, resolvedLeads, getStoredAccessToken());
-        }
-        // A sync just succeeded — clear any earlier failure banner.
-        setDbSyncError(null);
-      } catch (err) {
-        console.error("Failed to sync updates to Supabase:", err);
-        setDbStatus('error');
-        // Surface the real error instead of only logging it — this is the only
-        // way to tell "saved" from "looks saved but silently failed."
-        setDbSyncError(err.message || 'Unknown error while saving to the shared database.');
       }
+
+      // Upsert active leads
+      if (resolvedLeads.length > 0) {
+        await upsertCandidatesToSupabase(SUPABASE_URL, SUPABASE_ANON_KEY, resolvedLeads, getStoredAccessToken());
+      }
+      // A sync just succeeded — clear any earlier failure banner.
+      setDbSyncError(null);
+    } catch (err) {
+      console.error("Failed to sync updates to Supabase:", err);
+      setDbStatus('error');
+      // Surface the real error instead of only logging it — this is the only
+      // way to tell "saved" from "looks saved but silently failed."
+      setDbSyncError(err.message || 'Unknown error while saving to the shared database.');
     }
   };
-  // Connect & migrate local storage to online shared database
-  const handleConnectSupabase = async (e) => {
-    e.preventDefault();
 
-    // Save API Keys globally
+  // Save the Apify/Groq API keys — the only user-configurable settings.
+  const handleSaveKeys = (e) => {
+    e.preventDefault();
     localStorage.setItem('siliconPatternsApifyKey', inputApifyKey);
     localStorage.setItem('siliconPatternsGroqApiKey', inputGroqKey);
-
-    if (inputUseSupabase && (!inputUrl.trim() || !inputKey.trim())) {
-      alert("Please enter a valid Supabase URL and API Key.");
-      return;
-    }
-
-    setDbStatus('connecting');
-    try {
-      if (inputUseSupabase) {
-        const { fetchCandidatesFromSupabase, upsertCandidatesToSupabase } = await import('./supabase.js');
-
-        // 1. Fetch remote candidates
-        const remoteCandidates = await fetchCandidatesFromSupabase(inputUrl, inputKey, getStoredAccessToken());
-
-        // 2. Perform two-way merge
-        const mergedMap = new Map();
-
-        // Place local leads first
-        masterLeads.forEach(c => {
-          const u = (c.linkedinUrl || c.url || '').split('?')[0].toLowerCase().trim();
-          if (u) mergedMap.set(u, c);
-        });
-
-        // Merge in remote leads, keeping newer metrics
-        remoteCandidates.forEach(c => {
-          const u = (c.linkedinUrl || c.url || '').split('?')[0].toLowerCase().trim();
-          if (u) {
-            const local = mergedMap.get(u);
-            if (local) {
-              mergedMap.set(u, {
-                ...local,
-                ...c,
-                matchScore: Math.max(local.matchScore || 0, c.matchScore || 0),
-                status: c.status || local.status || 'sourced'
-              });
-            } else {
-              mergedMap.set(u, c);
-            }
-          }
-        });
-
-        const mergedLeads = Array.from(mergedMap.values());
-
-        // 3. Push complete dataset back to Supabase
-        if (mergedLeads.length > 0) {
-          await upsertCandidatesToSupabase(inputUrl, inputKey, mergedLeads, getStoredAccessToken());
-        }
-
-        // 4. Update state and config
-        setMasterLeads(mergedLeads);
-
-
-        localStorage.setItem('siliconPatternsDbMode', 'supabase');
-        localStorage.setItem('siliconPatternsSupabaseUrl', inputUrl);
-        localStorage.setItem('siliconPatternsSupabaseKey', inputKey);
-
-        setUseSupabase(true);
-        setSupabaseUrl(inputUrl);
-        setSupabaseKey(inputKey);
-        setDbStatus('connected');
-        alert("Connected and synced successfully! You are now working on a shared database.");
-      } else {
-        // Disabling Supabase, fallback to local storage mode
-        localStorage.setItem('siliconPatternsDbMode', 'local');
-        setUseSupabase(false);
-        setDbStatus('local');
-        alert("Database connection deactivated. Switched back to Local Browser Storage.");
-      }
-      setShowSettings(false);
-    } catch (err) {
-      console.error(err);
-      setDbStatus('error');
-      alert(`Database connection failed:\n${err.message}`);
-    }
+    setShowSettings(false);
   };
-
-  const sqlCode = `create table candidates (
-  linkedin_url text primary key,
-  first_name text,
-  last_name text,
-  headline text,
-  current_title text,
-  location text,
-  match_score integer,
-  status text default 'sourced',
-  agent_score integer,
-  agent_reasoning text,
-  assigned_recruiter_email text,
-  profile_data jsonb,
-  created_at timestamptz default now()
-);
-
--- Row-level security: only authenticated recruiters can read/write.
--- See supabase-rls-setup.sql for the full policy set (also covers
--- search_cursors, recruiter_activities, approved_emails, pending_users).
-alter table candidates enable row level security;
-
-create policy "Authenticated users can read candidates"
-  on candidates for select to authenticated using (true);
-create policy "Authenticated users can insert candidates"
-  on candidates for insert to authenticated with check (true);
-create policy "Authenticated users can update candidates"
-  on candidates for update to authenticated using (true);
-create policy "Authenticated users can delete candidates"
-  on candidates for delete to authenticated using (true);`;
 
   return (
     <AuthProvider>
+      <AuthSyncTrigger onReady={fetchAndSyncCandidates} />
       <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/*" element={
@@ -2279,12 +2174,12 @@ create policy "Authenticated users can delete candidates"
                   )}
                   <Routes>
                     <Route path="/" element={<DefaultLanding />} />
-                    <Route path="/search" element={<AdminRoute><SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} /></AdminRoute>} />
+                    <Route path="/search" element={<AdminRoute><SearchPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} supabaseUrl={SUPABASE_URL} supabaseKey={SUPABASE_ANON_KEY} /></AdminRoute>} />
                     <Route path="/candidates" element={<CandidatesPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
                     <Route path="/agent" element={<AIAgentPage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} />} />
-                    <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />} />
+                    <Route path="/pipeline" element={<PipelinePage masterLeads={masterLeads} setMasterLeads={syncMasterLeads} supabaseUrl={SUPABASE_URL} supabaseKey={SUPABASE_ANON_KEY} />} />
                     <Route path="/analytics" element={<AnalyticsPage masterLeads={masterLeads} />} />
-                    <Route path="/admin" element={<AdminRoute><AdminPage masterLeads={masterLeads} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} /></AdminRoute>} />
+                    <Route path="/admin" element={<AdminRoute><AdminPage masterLeads={masterLeads} supabaseUrl={SUPABASE_URL} supabaseKey={SUPABASE_ANON_KEY} /></AdminRoute>} />
                   </Routes>
                 </div>
 
@@ -2312,8 +2207,8 @@ create policy "Authenticated users can delete candidates"
               >×</button>
             </div>
 
-            {/* Modal Body: Connection Settings */}
-            <form onSubmit={handleConnectSupabase} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Modal Body: API Keys */}
+            <form onSubmit={handleSaveKeys} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
                 <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>API Keys</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2352,94 +2247,6 @@ create policy "Authenticated users can delete candidates"
                 </div>
               </div>
 
-              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Database Settings</h4>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                  <input
-                    type="checkbox"
-                    id="enableDb"
-                    checked={inputUseSupabase}
-                    onChange={e => setInputUseSupabase(e.target.checked)}
-                    style={{ width: '16px', height: '16px', accentColor: '#18181b', cursor: 'pointer' }}
-                  />
-                  <label htmlFor="enableDb" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', cursor: 'pointer', userSelect: 'none' }}>
-                    Connect Shared Supabase Database (No Login Required)
-                  </label>
-                </div>
-                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                  Enabling this connects your recruiter database to a shared online cloud database. Multiple recruiters can share and updates will automatically sync across devices.
-                </p>
-              </div>
-
-              {inputUseSupabase && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', backgroundColor: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
-                      Supabase Project URL
-                    </label>
-                    <input
-                      type="text"
-                      value={inputUrl}
-                      onChange={e => setInputUrl(e.target.value)}
-                      placeholder="https://your-project-id.supabase.co"
-                      required={inputUseSupabase}
-                      style={{
-                        width: '100%', padding: '8px 12px', boxSizing: 'border-box',
-                        borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '13px',
-                        backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)'
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase' }}>
-                      Supabase Public Anon API Key
-                    </label>
-                    <input
-                      type="password"
-                      value={inputKey}
-                      onChange={e => setInputKey(e.target.value)}
-                      placeholder="eyJhbGciOi..."
-                      required={inputUseSupabase}
-                      style={{
-                        width: '100%', padding: '8px 12px', boxSizing: 'border-box',
-                        borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '13px',
-                        backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)'
-                      }}
-                    />
-                  </div>
-
-                  {/* SQL Schema Instruction Dropdown */}
-                  <div style={{ marginTop: '4px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setShowSqlHelp(!showSqlHelp)}
-                      style={{
-                        background: 'none', border: 'none', padding: 0, color: 'var(--accent)',
-                        fontSize: '11px', fontWeight: '600', cursor: 'pointer', textDecoration: 'underline'
-                      }}
-                    >
-                      {showSqlHelp ? 'Hide SQL Table Setup Instructions' : 'View SQL Table Setup Instructions'}
-                    </button>
-
-                    {showSqlHelp && (
-                      <div style={{ marginTop: '8px' }}>
-                        <p style={{ margin: '0 0 6px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                          Paste this code into the <strong>SQL Editor</strong> tab inside your Supabase project dashboard to create the candidate table with disabled RLS:
-                        </p>
-                        <pre style={{
-                          margin: 0, padding: '10px', backgroundColor: '#000', color: '#fff', border: '1px solid var(--border-color)',
-                          borderRadius: '6px', fontSize: '10px', overflowX: 'auto', fontFamily: 'monospace',
-                          lineHeight: '1.4'
-                        }}>
-                          {sqlCode}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
               {/* Action Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '8px' }}>
                 <button
@@ -2461,7 +2268,7 @@ create policy "Authenticated users can delete candidates"
                     fontSize: '12px', fontWeight: '700'
                   }}
                 >
-                  Save & Sync Configuration
+                  Save
                 </button>
               </div>
             </form>

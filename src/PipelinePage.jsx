@@ -46,10 +46,10 @@ export default function PipelinePage({ masterLeads, setMasterLeads, supabaseUrl,
     setMasterLeads(updatedLeads);
     localStorage.setItem('siliconPatternsMasterDatabase', JSON.stringify(updatedLeads));
 
-    // Log stage change activity if online
-    const dbUrl = supabaseUrl || localStorage.getItem('siliconPatternsSupabaseUrl');
-    const dbKey = supabaseKey || localStorage.getItem('siliconPatternsSupabaseKey');
-    if (dbUrl && dbKey) {
+    // Log stage change activity
+    {
+      const dbUrl = supabaseUrl;
+      const dbKey = supabaseKey;
       import('./supabase.js').then(({ logRecruiterActivity }) => {
         let skillArray = [];
         if (candidate.skills) {

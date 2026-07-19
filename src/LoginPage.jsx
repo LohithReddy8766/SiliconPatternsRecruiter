@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, isAdminEmail } from './AuthContext';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  
+
   // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,105 +15,45 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  // Database Connection Settings (for actual OTP emails)
-  const [supabaseUrl, setSupabaseUrl] = useState('');
-  const [supabaseKey, setSupabaseKey] = useState('');
-
-  // Settings inputs on login card
-  const [showDbConfig, setShowDbConfig] = useState(false);
-  const [inputUrl, setInputUrl] = useState('');
-  const [inputKey, setInputKey] = useState('');
-
   useEffect(() => {
-    const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-    const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-    
-    const url = localStorage.getItem('siliconPatternsSupabaseUrl') || envUrl;
-    const key = localStorage.getItem('siliconPatternsSupabaseKey') || envKey;
-    
-    const activeUrl = url.trim();
-    const activeKey = key.trim();
-
-    if (activeUrl && activeKey) {
-      setSupabaseUrl(activeUrl);
-      setSupabaseKey(activeKey);
-      setInputUrl(activeUrl);
-      setInputKey(activeKey);
-
-      // Check if user arrived via Magic Link email click (#access_token=...)
-      const hash = window.location.hash;
-      if (hash && hash.includes('access_token=')) {
-        try {
-          const params = new URLSearchParams(hash.replace('#', '?'));
-          const accessToken = params.get('access_token');
-          const refreshToken = params.get('refresh_token');
-          if (accessToken) {
-            const cleanBaseUrl = activeUrl.replace(/\/$/, '');
-            fetch(`${cleanBaseUrl}/auth/v1/user`, {
-              headers: {
-                'apikey': activeKey,
-                'Authorization': `Bearer ${accessToken}`
-              }
-            })
-            .then(res => res.json())
-            .then(userData => {
-              if (userData && userData.email) {
-                const cleanEmail = userData.email.toLowerCase().trim();
-                const username = cleanEmail.split('@')[0];
-                const displayName = username.charAt(0).toUpperCase() + username.slice(1);
-                login({
-                  email: cleanEmail,
-                  name: displayName,
-                  picture: userData.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`,
-                  accessToken,
-                  refreshToken,
-                  userData
-                });
-                navigate('/');
-              }
-            })
-            .catch(err => console.error("Magic link authentication error:", err));
-          }
-        } catch (e) {
-          console.error("URL hash parsing error:", e);
+    // Check if user arrived via Magic Link email click (#access_token=...)
+    const hash = window.location.hash;
+    if (hash && hash.includes('access_token=')) {
+      try {
+        const params = new URLSearchParams(hash.replace('#', '?'));
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+        if (accessToken) {
+          fetch(`${SUPABASE_URL}/auth/v1/user`, {
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${accessToken}`
+            }
+          })
+          .then(res => res.json())
+          .then(userData => {
+            if (userData && userData.email) {
+              const cleanEmail = userData.email.toLowerCase().trim();
+              const username = cleanEmail.split('@')[0];
+              const displayName = username.charAt(0).toUpperCase() + username.slice(1);
+              login({
+                email: cleanEmail,
+                name: displayName,
+                picture: userData.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`,
+                accessToken,
+                refreshToken,
+                userData
+              });
+              navigate('/');
+            }
+          })
+          .catch(err => console.error("Magic link authentication error:", err));
         }
+      } catch (e) {
+        console.error("URL hash parsing error:", e);
       }
     }
   }, []);
-
-  const handleConnectDb = (e) => {
-    e.preventDefault();
-    setError('');
-    setMessage('');
-
-    if (!inputUrl.trim() || !inputKey.trim()) {
-      setError('Please provide a valid Supabase URL and API Key.');
-      return;
-    }
-
-    try {
-      localStorage.setItem('siliconPatternsSupabaseUrl', inputUrl.trim());
-      localStorage.setItem('siliconPatternsSupabaseKey', inputKey.trim());
-      
-      setSupabaseUrl(inputUrl.trim());
-      setSupabaseKey(inputKey.trim());
-      setShowDbConfig(false);
-      setMessage('Connected to Supabase. Secure OTP email delivery is now active!');
-    } catch (err) {
-      setError(`Failed to save configuration: ${err.message}`);
-    }
-  };
-
-  const handleDisconnectDb = () => {
-    localStorage.removeItem('siliconPatternsSupabaseUrl');
-    localStorage.removeItem('siliconPatternsSupabaseKey');
-    setSupabaseUrl('');
-    setSupabaseKey('');
-    setInputUrl('');
-    setInputKey('');
-    setError('');
-    setMessage('Disconnected database.');
-  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -143,23 +84,15 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    if (!supabaseUrl || !supabaseKey) {
-      setError('Database connection not configured. Please configure your workspace database connection below.');
-      setLoading(false);
-      return;
-    }
-
     try {
-      const cleanBaseUrl = supabaseUrl.replace(/\/$/, '');
-
       // Unconditionally attempt to create the account first.
       // If the user already exists, this will fail silently (which is expected).
       // If they are a new user, this will create their account with the provided password.
-      await fetch(`${cleanBaseUrl}/auth/v1/signup`, {
+      await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
         method: 'POST',
         headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -172,11 +105,11 @@ export default function LoginPage() {
       // real user access token. RLS on approved_emails/pending_users only
       // lets a user read/write their OWN row, which requires a genuine
       // Supabase session — the shared anon key alone no longer qualifies.
-      let loginRes = await fetch(`${cleanBaseUrl}/auth/v1/token?grant_type=password`, {
+      let loginRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
         method: 'POST',
         headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -203,11 +136,11 @@ export default function LoginPage() {
 
       const { checkEmailApproved, addPendingUser } = await import('./supabase.js');
       // Built-in admins are pre-authorized and skip the approval gate.
-      const isApproved = isAdminEmail(cleanEmail) || await checkEmailApproved(supabaseUrl, supabaseKey, cleanEmail, accessToken);
+      const isApproved = isAdminEmail(cleanEmail) || await checkEmailApproved(SUPABASE_URL, SUPABASE_ANON_KEY, cleanEmail, accessToken);
 
       if (!isApproved) {
         // Add to pending_users table since they aren't on the allowlist
-        await addPendingUser(supabaseUrl, supabaseKey, cleanEmail, accessToken);
+        await addPendingUser(SUPABASE_URL, SUPABASE_ANON_KEY, cleanEmail, accessToken);
 
         setError('Account created. Waiting for administrator approval.');
         setLoading(false);
@@ -357,104 +290,6 @@ export default function LoginPage() {
             </form>
           ) : (
              <div></div>
-          )}
-
-          {/* Collapsible Connection Config Section */}
-          {step === 'email' && (
-            <div style={{ marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-              <button 
-                type="button"
-                onClick={() => setShowDbConfig(v => !v)}
-                style={{
-                  background: 'none', border: 'none', color: 'var(--text-secondary)',
-                  fontSize: '11px', textDecoration: 'underline', cursor: 'pointer',
-                  outline: 'none', transition: 'color 0.15s'
-                }}
-                onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
-              >
-                {showDbConfig ? 'Hide Connection Config' : 'Configure Workspace Database Connection'}
-              </button>
-
-              {showDbConfig && (
-                <div style={{ 
-                  marginTop: '16px', padding: '16px', backgroundColor: 'var(--bg-main)', 
-                  border: '1px solid var(--border-color)', borderRadius: '8px', textAlign: 'left' 
-                }}>
-                  <h4 style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                    Supabase Credentials
-                  </h4>
-                  
-                  {(!supabaseUrl || !supabaseKey) ? (
-                    <form onSubmit={handleConnectDb} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '600', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Supabase URL
-                        </label>
-                        <input
-                          type="url"
-                          required
-                          placeholder="https://your-project.supabase.co"
-                          value={inputUrl}
-                          onChange={e => setInputUrl(e.target.value)}
-                          style={{
-                            width: '100%', padding: '6px 8px', boxSizing: 'border-box',
-                            borderRadius: '4px', border: '1px solid var(--border-color)',
-                            fontSize: '12px', color: 'var(--text-primary)', backgroundColor: 'var(--bg-surface)',
-                            outline: 'none'
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '600', marginBottom: '4px', textTransform: 'uppercase' }}>
-                          Supabase Anon API Key
-                        </label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="eyJhbGciOi..."
-                          value={inputKey}
-                          onChange={e => setInputKey(e.target.value)}
-                          style={{
-                            width: '100%', padding: '6px 8px', boxSizing: 'border-box',
-                            borderRadius: '4px', border: '1px solid var(--border-color)',
-                            fontSize: '12px', color: 'var(--text-primary)', backgroundColor: 'var(--bg-surface)',
-                            outline: 'none'
-                          }}
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        style={{
-                          padding: '6px 12px', backgroundColor: 'var(--accent)', color: 'var(--accent-fg)',
-                          border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600',
-                          cursor: 'pointer', marginTop: '4px', textAlign: 'center'
-                        }}
-                      >
-                        Connect Database
-                      </button>
-                    </form>
-                  ) : (
-                    <div>
-                      <p style={{ margin: '0 0 12px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                        Currently connected to: <strong style={{ color: 'var(--text-primary)' }}>{supabaseUrl.substring(0, 30)}...</strong>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleDisconnectDb}
-                        style={{
-                          padding: '6px 12px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#f87171',
-                          border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '4px', fontSize: '11px',
-                          fontWeight: '600', cursor: 'pointer'
-                        }}
-                      >
-                        Disconnect Database
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
           )}
         </div>
 
